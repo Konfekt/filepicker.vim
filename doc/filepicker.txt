@@ -1,0 +1,73 @@
+```vim
+*filepicker.txt*    Plugin for launching terminal file millers from (Neo)Vim
+
+==============================================================================
+INTRODUCTION                                                    *FilePicker-intro*
+
+The FilePicker plugin provides a command `:FilePicker` that launches a terminal
+file miller such as [Ranger](https://ranger.github.io/), [LF](https://github.com/gokcehan/lf),
+[Yazi](https://github.com/sxyazi/yazi), or [NNN](https://github.com/jarun/nnn) to
+select and open files directly in (Neo)Vim. If no path is specified, it defaults
+to the directory of the currently open file.
+
+==============================================================================
+COMMANDS                                                          *FilePicker-commands*
+
+                                                        *:FilePicker*
+`:FilePicker [path]`:
+    Launches the terminal file miller. If `[path]` is provided, it opens the
+    specified directory. Otherwise, it defaults to the directory of the current
+    file.
+
+==============================================================================
+MAPPINGS                                                          *FilePicker-mappings*
+
+                                                        *FilePicker-mapping-*
+The plugin provides a default mapping to `-` which attempts to launch one of
+the supported file millers. If none of Ranger, LF, Yazi, or NNN is available,
+it falls back to the built-in Netrw file explorer.
+
+This respects  `g:no_plugin_maps`. It can be disabled by defining a variable
+`g:no_filepicker_maps`, and remapped by `<plug>(FilePicker)`.
+
+==============================================================================
+INSTALLATION                                                      *FilePicker-install*
+
+1. Using a plugin manager like vim-plug, add the following line to your vimrc:
+
+>
+    Plug Konfekt/filepicker'
+<
+
+2. Reload your vimrc and run `:PlugInstall` to install the plugin.
+
+3. Ensure that one of the supported file millers (Ranger, LF, Yazi, NNN) is
+   installed and available in your system's PATH.
+
+==============================================================================
+CONFIGURATION                                                    *FilePicker-config*
+
+No additional configuration is required. The plugin automatically detects
+available file millers and uses them in the order of preference: Ranger, LF,
+Yazi, NNN. If none are available, it defaults to Netrw.
+
+==============================================================================
+TROUBLESHOOTING                                                *FilePicker-troubleshooting*
+
+- If the `:FilePicker` command does not launch the expected file miller, ensure
+  that the miller is installed and accessible in your system's PATH.
+
+- If the mapping to `-` does not work, verify that it is not overridden by
+  another mapping in your vimrc or other plugins.
+
+==============================================================================
+SEE ALSO                                                          *FilePicker-see-also*
+
+- |netrw|: The built-in file explorer for Vim.
+- [Ranger](https://ranger.github.io/)
+- [LF](https://github.com/gokcehan/lf)
+- [Yazi](https://github.com/sxyazi/yazi)
+- [NNN](https://github.com/jarun/nnn)
+
+vim:tw=78:ts=8:ft=help:norl:
+```
