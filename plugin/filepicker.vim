@@ -32,8 +32,16 @@ endif
 if exists(':FilePicker') == 2
   function! FilePicker(...)
     let path = a:000[-1]
-    let cmd = a:000[:-2] + (empty(path) ?
-          \ [filereadable(expand('%')) ? shellescape(expand('%'),1) : '.'] : [path])
+    if empty(path)
+      let path = expand('%')
+      if filereadable(path)
+        let uses_term = has('nvim') || has('gui_running')
+        if !uses_term | let path = shellescape(path,1) | endif
+      else
+        let path = '.'
+      endif
+    endif
+    let cmd = a:000[:-2] + [path]
     if has('nvim')
       enew
       call termopen(cmd, { 'on_exit': function('s:open') })
