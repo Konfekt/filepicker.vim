@@ -42,31 +42,49 @@ if exists(':FilePicker') == 2
       endif
     endif
     let cmd = a:000[:-2] + [path]
-    if has('nvim')
-      enew
-      call termopen(cmd, { 'on_exit': function('s:open') })
-    else
-      if has('gui_running')
-        if has('terminal')
-          call term_start(cmd, {'exit_cb': function('s:term_close'), 'curwin': 1})
-        else
-          echomsg 'GUI is running but terminal is not supported.'
-        endif
-      else
-        exec 'silent !'..join(cmd) | call s:open()
-      endif
-    endif
+    call s:term(cmd)
   endfunction
 
-  if has('gui_running') && has('terminal')
-    function! s:term_close(job_id, event)
-      if a:event == 'exit'
-        bwipeout!
-        call s:open()
-      endif
+  if exists('g:vscode')
+    let s:code = executable('code') ? 'code' : 'codium'
+    function! s:term(cmd) abort
+	    call VSCodeNotify('workbench.action.terminal.toggleTerminal')
+    	call VSCodeNotify('workbench.action.terminal.sendSequence', {'text':
+            \ join(a:cmd)
+            \ .. ' && ('..s:code..' --reuse-window "$(head -n 1 "'..s:temp..'")")'
+            \ .."\n"})
     endfunction
+  elseif has('nvim')
+    function! s:term(cmd) abort
+      enew
+      call termopen(a:cmd, { 'on_exit': function('s:open') })
+    endfunction
+  else
+    if has('gui_running')
+      if has('terminal')
+        function! s:term(cmd) abort
+          call term_start(a:cmd, {'exit_cb': function('s:term_close'), 'curwin': 1})
+        endfunction
+
+        function! s:term_close(job_id, event) abort
+          if a:event == 'exit'
+            bwipeout!
+            call s:open()
+          endif
+        endfunction
+      else
+        function! s:term(dummy) abort
+          echomsg 'GUI is running but terminal is not supported.'
+        endfunction
+      endif
+    else
+      function! s:term(cmd) abort
+        exec 'silent !'..join(a:cmd) | call s:open()
+      endfunction
+    endif
   endif
 
+  if !exists('g:vscode')
   function! s:open(...)
     if !filereadable(s:temp)
       " if &buftype ==# 'terminal'
@@ -90,6 +108,7 @@ if exists(':FilePicker') == 2
     endfor
     redraw!
   endfunction
+  endif
 endif
 
 if exists("g:no_plugin_maps") || exists("g:no_filepicker_maps") | finish | endif
