@@ -47,13 +47,21 @@ if exists(':FilePicker') == 2
 
   if exists('g:vscode')
     let s:code = executable('code') ? 'code' : 'codium'
+    if has('unix')
+      let s:code_cmd = '('..s:code..' --reuse-window "$(head -n 1 "'..s:temp..'")")'
+    elseif has('win32')
+      let s:code_cmd = '$filePath = Get-Content -Path "'..s:temp..'" | Select-Object -First 1; '..s:code..' --reuse-window "$filePath"'
+    endif
+    if exists('s:code_cmd')
     function! s:term(cmd) abort
-	    call VSCodeNotify('workbench.action.terminal.toggleTerminal')
-    	call VSCodeNotify('workbench.action.terminal.sendSequence', {'text':
-            \ join(a:cmd)
-            \ .. ' && ('..s:code..' --reuse-window "$(head -n 1 "'..s:temp..'")")'
-            \ .."\n"})
+	call VSCodeNotify('workbench.action.terminal.toggleTerminal')
+        call VSCodeNotify('workbench.action.terminal.sendSequence', {'text': join(a:cmd) .. ' && ' .. s:code_cmd .."\n"})
     endfunction
+    else
+      function! s:term(cmd) abort
+        echomsg 'VSCode/Codium only supported on Unix or Win32 operating systems!'
+      endfunction
+    endif
   elseif has('nvim')
     function! s:term(cmd) abort
       enew
