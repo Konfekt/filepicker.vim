@@ -16,6 +16,11 @@
 " A mapping to - is provided below that falls back to built-in Netrw if none of
 " Ranger/LF/Yazi/NNN is available.
 
+if &compatible || exists('g:loaded_filepicker')
+    finish
+endif
+let g:loaded_filepicker = 1
+
 let s:temp = tempname()
 if executable('lf')
   command! -nargs=? -bar -complete=dir FilePicker call FilePicker('lf', '-selection-path', s:temp, <q-args>)
@@ -144,5 +149,5 @@ else
   endfunction
 endif
 if !hasmapto('<plug>(FilePicker)', 'n')
-  nnoremap <silent> - <plug>(FilePicker)
+  nmap <silent> - <plug>(FilePicker)
 endif
