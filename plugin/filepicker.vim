@@ -34,7 +34,32 @@ elseif executable('nnn')
   command! -nargs=? -bar -complete=dir FilePicker call FilePicker('nnn', '-p', s:temp, <q-args>)
 endif
 
-if exists(':FilePicker') == 2
+if exists(':FilePicker') != 2
+  " Fallback to built-in Netrw if none of Ranger/LF/Yazi/NNN is available.
+  command! -nargs=? -bar -complete=dir FilePicker call <sid>Opendir(<q-args>)
+  function! s:Opendir(dir) abort
+    let path = a:dir
+    if empty(path)
+      let path = expand('%')
+      if path =~# '^$\|^term:[\/][\/]'
+        execute 'edit' '.'
+      else
+        " fix for - to select the current file,
+        " see https://github.com/tpope/vim-vinegar/issues/136
+        let save_dir = chdir(expand('%:p:h'))
+
+        try
+        execute 'edit' '%:h'
+        let pattern = '^\%(| \)*'.escape(expand('#:t'), '.*[]~\').'[/*|@=]\=\%($\|\s\)'
+        call search(pattern, 'wc')
+
+        finally | call chdir(save_dir) | endtry
+      endif
+    else
+      execute 'edit' path
+    endif
+  endfunction
+else
   function! FilePicker(...)
     let path = a:000[-1]
     if empty(path)
@@ -98,56 +123,36 @@ if exists(':FilePicker') == 2
   endif
 
   if !exists('g:vscode')
-  function! s:open(...)
-    if !filereadable(s:temp)
-      " if &buftype ==# 'terminal'
-      "   bwipeout!
-      " endif
+    function! s:open(...)
+      if !filereadable(s:temp)
+        " if &buftype ==# 'terminal'
+        "   bwipeout!
+        " endif
+        redraw!
+        " Nothing to read.
+        return
+      endif
+      let names = readfile(s:temp)
+      if empty(names)
+        redraw!
+        " Nothing to open.
+        return
+      endif
+      " Edit the first item.
+      exec 'edit' fnameescape(names[0])
+      " Add any remaning items to the arg list/buffer list.
+      for name in names[1:]
+        exec 'argadd' fnameescape(name)
+      endfor
       redraw!
-      " Nothing to read.
-      return
-    endif
-    let names = readfile(s:temp)
-    if empty(names)
-      redraw!
-      " Nothing to open.
-      return
-    endif
-    " Edit the first item.
-    exec 'edit' fnameescape(names[0])
-    " Add any remaning items to the arg list/buffer list.
-    for name in names[1:]
-      exec 'argadd' fnameescape(name)
-    endfor
-    redraw!
-  endfunction
+    endfunction
   endif
 endif
 
+nnoremap <silent> <plug>(FilePicker) :<c-u>FilePicker<CR>
+
 if exists("g:no_plugin_maps") || exists("g:no_filepicker_maps") | finish | endif
 
-if exists(':FilePicker') == 2
-  nnoremap <silent> <plug>(FilePicker) :<c-u>FilePicker<CR>
-else
-  nnoremap <silent> <plug>(FilePicker) :<c-u>call <sid>Opendir('edit')<CR>
-  function! s:Opendir(cmd) abort
-    " fix for - to select the current file,
-    " see https://github.com/tpope/vim-vinegar/issues/136
-    let save_dir = chdir(expand('%:p:h'))
-
-    if expand('%') =~# '^$\|^term:[\/][\/]'
-      execute a:cmd '.'
-    else
-      execute a:cmd '%:h'
-      let pattern = '^\%(| \)*'.escape(expand('#:t'), '.*[]~\').'[/*|@=]\=\%($\|\s\)'
-      call search(pattern, 'wc')
-    endif
-
-    if !empty(save_dir)
-      call chdir(save_dir)
-    endif
-  endfunction
-endif
 if !hasmapto('<plug>(FilePicker)', 'n')
   nmap <silent> - <plug>(FilePicker)
 endif
