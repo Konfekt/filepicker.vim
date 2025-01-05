@@ -75,24 +75,7 @@ else
     call s:term(cmd)
   endfunction
 
-  if exists('g:vscode')
-    let s:code = executable('code') ? 'code' : 'codium'
-    if has('unix')
-      let s:code_cmd = '('..s:code..' --reuse-window "$(head -n 1 "'..s:temp..'")")'
-    elseif has('win32')
-      let s:code_cmd = '$filePath = Get-Content -Path "'..s:temp..'" | Select-Object -First 1; '..s:code..' --reuse-window "$filePath"'
-    endif
-    if exists('s:code_cmd')
-    function! s:term(cmd) abort
-	call VSCodeNotify('workbench.action.terminal.toggleTerminal')
-        call VSCodeNotify('workbench.action.terminal.sendSequence', {'text': join(a:cmd) .. ' && ' .. s:code_cmd .."\n"})
-    endfunction
-    else
-      function! s:term(cmd) abort
-        echomsg 'VSCode/Codium only supported on Unix or Win32 operating systems!'
-      endfunction
-    endif
-  elseif has('nvim')
+  if has('nvim')
     function! s:term(cmd) abort
       enew
       call termopen(a:cmd, { 'on_exit': function('s:open') })
@@ -122,31 +105,29 @@ else
     endif
   endif
 
-  if !exists('g:vscode')
-    function! s:open(...)
-      if !filereadable(s:temp)
-        " if &buftype ==# 'terminal'
-        "   bwipeout!
-        " endif
-        redraw!
-        " Nothing to read.
-        return
-      endif
-      let names = readfile(s:temp)
-      if empty(names)
-        redraw!
-        " Nothing to open.
-        return
-      endif
-      " Edit the first item.
-      exec 'edit' fnameescape(names[0])
-      " Add any remaning items to the arg list/buffer list.
-      for name in names[1:]
-        exec 'argadd' fnameescape(name)
-      endfor
+  function! s:open(...)
+    if !filereadable(s:temp)
+      " if &buftype ==# 'terminal'
+      "   bwipeout!
+      " endif
       redraw!
-    endfunction
-  endif
+      " Nothing to read.
+      return
+    endif
+    let names = readfile(s:temp)
+    if empty(names)
+      redraw!
+      " Nothing to open.
+      return
+    endif
+    " Edit the first item.
+    exec 'edit' fnameescape(names[0])
+    " Add any remaning items to the arg list/buffer list.
+    for name in names[1:]
+      exec 'argadd' fnameescape(name)
+    endfor
+    redraw!
+  endfunction
 endif
 
 nnoremap <silent> <plug>(FilePicker) :<c-u>FilePicker<CR>

@@ -1,6 +1,6 @@
 # Command
 
-This (Neo)Vim plug-in defines a command `:FilePicker` that launches one of the terminal file millers [Ranger](https://ranger.github.io/), [LF](https://github.com/gokcehan/lf), [Yazi](https://github.com/sxyazi/yazi), or [NNN](https://github.com/jarun/nnn) to preview, select and open files on-the-fly in Vim, NeoVim or [Visual Studio Code/Codium](https://github.com/vscode-neovim/vscode-neovim).
+This (Neo)Vim plug-in defines a command `:FilePicker` that launches one of the terminal file millers [Ranger](https://ranger.github.io/), [LF](https://github.com/gokcehan/lf), [Yazi](https://github.com/sxyazi/yazi), or [NNN](https://github.com/jarun/nnn) to preview, select and open files on-the-fly in (Neo)Vim.
 If no path is given, then it opens that of the currently open file.
 
 # Mapping
