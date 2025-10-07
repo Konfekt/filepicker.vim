@@ -79,6 +79,7 @@ else
     function! s:term(cmd) abort
       enew
       call termopen(a:cmd, { 'on_exit': function('s:open') })
+      startinsert
     endfunction
   else
     if has('gui_running')
