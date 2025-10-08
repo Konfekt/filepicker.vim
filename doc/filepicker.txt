@@ -1,73 +1,135 @@
-```vim
-*filepicker.txt*    Plugin for launching terminal file millers from (Neo)Vim
+*filepicker.txt*    FilePicker — launch Ranger/LF/Yazi/NNN from (Neo)Vim
+                                                        *filepicker* *FilePicker*
 
 ==============================================================================
 INTRODUCTION                                                    *FilePicker-intro*
 
-The FilePicker plugin provides a command `:FilePicker` that launches a terminal
-file miller such as [Ranger](https://ranger.github.io/), [LF](https://github.com/gokcehan/lf),
-[Yazi](https://github.com/sxyazi/yazi), or [NNN](https://github.com/jarun/nnn) to
-select and open files directly in Vim. If no path is specified, it defaults
-to the directory of the currently open file.
+FilePicker provides the |:FilePicker| command to launch a terminal file miller
+([LF], [Ranger], [Yazi], or [NNN]) to preview, select, and open files in Vim
+or Neovim. If no path is given, start in the current buffer's directory (or
+the current working directory if no file buffer is active).
+
+On multiple selections, open the first and add the rest to the |arglist|.
 
 ==============================================================================
-COMMANDS                                                          *FilePicker-commands*
+COMMANDS                                                      *FilePicker-commands*
 
                                                         *:FilePicker*
 `:FilePicker [path]`:
-    Launches the terminal file miller. If `[path]` is provided, it opens the
-    specified directory. Otherwise, it defaults to the directory of the current
-    file.
+    -complete=dir
+    - Start the picker in [path].
+    - If omitted, start in the current buffer's directory (or CWD if none).
+    - Open the first selected file and add remaining selections to the arglist.
+
+If no external picker is available, fall back to |netrw| for directory opening.
 
 ==============================================================================
-MAPPINGS                                                          *FilePicker-mappings*
+MAPPINGS                                                      *FilePicker-mappings*
 
-                                                        *FilePicker-mapping-*
-The plugin provides a default mapping to `-` which attempts to launch one of
-the supported file millers. If none of Ranger, LF, Yazi, or NNN is available,
-it falls back to the built-in Netrw file explorer.
-
-This respects  `g:no_plugin_maps`. It can be disabled by defining a variable
-`g:no_filepicker_maps`, and remapped by `<plug>(FilePicker)`.
+                                                        *<Plug>(FilePicker)*
+- Default normal-mode map: `-` → `<Plug>(FilePicker)`.
+- Remap by mapping `<Plug>(FilePicker)`.
+- Disable default mapping: set one of
+  - `let g:no_filepicker_maps = 1`
+  - `let g:no_plugin_maps = 1`
 
 ==============================================================================
-INSTALLATION                                                      *FilePicker-install*
+PICKER SELECTION                                              *FilePicker-picker*
 
-1. Using a plugin manager like vim-plug, add the following line to your vimrc:
+Auto-detect supported pickers in this order: lf, ranger, yazi, nnn.
+
+Prefer a specific picker:
 
 >
-    Plug Konfekt/filepicker'
+    " 'lf', 'ranger', 'yazi', 'nnn', or an absolute path
+    let g:filepicker_prefer = 'lf'
 <
 
-2. Reload your vimrc and run `:PlugInstall` to install the plugin.
-
-3. Ensure that one of the supported file millers (Ranger, LF, Yazi, NNN) is
-   installed and available in your system's PATH.
+The value must be executable.
 
 ==============================================================================
-CONFIGURATION                                                    *FilePicker-config*
+OPTIONS                                                      *FilePicker-options*
 
-No additional configuration is required. The plugin automatically detects
-available file millers and uses them in the order of preference: Ranger, LF,
-Yazi, NNN. If none are available, it defaults to Netrw.
+- g:filepicker_hijack_netrw                                    *g:filepicker_hijack_netrw*
+  - Default: 1 (enabled).
+  - When enabled, intercept opening of directories and launch the external
+    picker instead of |netrw|.
+  - Triggers on:
+    - Startup with directory arguments (|VimEnter|).
+    - Entering a directory buffer (|BufEnter|).
+    - When netrw would be opened (|FileType| netrw).
+  - Close the temporary directory buffer after launching the picker.
+  - Has effect only if an external picker is available (no hijack on netrw
+    fallback). Disable with:
+>
+    let g:filepicker_hijack_netrw = 0
+<
 
 ==============================================================================
-TROUBLESHOOTING                                                *FilePicker-troubleshooting*
+BEHAVIOR                                                      *FilePicker-behavior*
 
-- If the `:FilePicker` command does not launch the expected file miller, ensure
-  that the miller is installed and accessible in your system's PATH.
+- Neovim:
+  - Use |termopen()| in a temporary terminal buffer.
+  - Wipe the terminal buffer on exit, then open selected files and restore.
 
-- If the mapping to `-` does not work, verify that it is not overridden by
-  another mapping in your vimrc or other plugins.
+- Vim with +terminal:
+  - Use |term_start()| in the current window.
+  - Wipe the terminal buffer on exit, then open selected files and restore.
+
+- Vim without +terminal:
+  - Synchronously invoke the picker via `:silent !...`, then return and open
+    selected files; redraw the UI.
+
+Selection transport (the picker writes selections to a temp file which is read
+back into Vim):
+
+- LF:     `lf -selection-path <tempfile>`
+- Ranger: `ranger --choosefiles=<tempfile> [--selectfile <file>]`
+- Yazi:   `yazi --chooser-file=<tempfile>`
+- NNN:    `nnn -p <tempfile>`
+
+When a file path is known (from the argument or current buffer), attempt to
+preselect it where supported.
 
 ==============================================================================
-SEE ALSO                                                          *FilePicker-see-also*
+EXAMPLES                                                    *FilePicker-examples*
 
-- |netrw|: The built-in file explorer for Vim.
-- [Ranger](https://ranger.github.io/)
-- [LF](https://github.com/gokcehan/lf)
-- [Yazi](https://github.com/sxyazi/yazi)
-- [NNN](https://github.com/jarun/nnn)
+>
+    " Prefer LF if installed; otherwise auto-detect
+    let g:filepicker_prefer = 'lf'
+
+    " Disable hijacking to keep netrw directory buffers
+    let g:filepicker_hijack_netrw = 0
+
+    " Custom mapping
+    nnoremap <silent> <leader>- <Plug>(FilePicker)
+
+    " Start picker in a specific path
+    " :FilePicker ~/projects
+<
+
+==============================================================================
+TROUBLESHOOTING                                          *FilePicker-troubleshooting*
+
+- If :FilePicker launches the fallback explorer, ensure that a supported picker
+  is installed and in $PATH.
+- If the `-` mapping does not work, verify no conflicting mapping and that
+  `g:no_filepicker_maps` or `g:no_plugin_maps` is not set.
+
+==============================================================================
+CHANGELOG                                                  *FilePicker-changelog*
+
+- Add g:filepicker_hijack_netrw to replace netrw directory views with the
+  external picker.
+- Improve startup path detection and file preselection.
+
+==============================================================================
+SEE ALSO                                                      *FilePicker-see-also*
+
+- |netrw|
+- [Ranger] https://ranger.github.io/
+- [LF]     https://github.com/gokcehan/lf
+- [Yazi]   https://github.com/sxyazi/yazi
+- [NNN]    https://github.com/jarun/nnn
 
 vim:tw=78:ts=8:ft=help:norl:
-```

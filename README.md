@@ -1,21 +1,15 @@
-# Command
+Launch one of Ranger, LF, Yazi, or NNN to preview, select, and open files in (Neo)Vim via :FilePicker.
+If no path is given, then open the path of the current buffer.
 
-This (Neo)Vim plug-in defines a command `:FilePicker` that launches one of the terminal file millers [Ranger](https://ranger.github.io/), [LF](https://github.com/gokcehan/lf), [Yazi](https://github.com/sxyazi/yazi), or [NNN](https://github.com/jarun/nnn) to preview, select and open files on-the-fly in (Neo)Vim.
-If no path is given, then it opens that of the currently open file.
+- Ranger: https://ranger.github.io/
+- LF: https://github.com/gokcehan/lf
+- Yazi: https://github.com/sxyazi/yazi
+- NNN: https://github.com/jarun/nnn
 
-# Mapping
 
-By default a mapping of `:FilePicker` to `-` is provided that falls back to built-in Netrw if none of Ranger/LF/Yazi/NNN is available.
-It can be remapped by mapping `<plug>(FilePicker)`, and disabled by defining a variable `g:no_filepicker_maps` (or `g:no_plugin_maps`).
+# Installation
 
-# Requirements
-
-Works in Neovim and (G)Vim. For Gvim, `:terminal` support is needed.
-
-## Installation
-
-To use the `:FilePicker` plugin, you need to have at least one of the supported file managers installed on your system.
-You can install the plugin using a plugin manager like `vim-plug`:
+Install with any plugin manager, e.g. vim-plug:
 
 ```vim
 call plug#begin('~/.vim/plugged')
@@ -23,5 +17,97 @@ Plug 'Konfekt/filepicker.vim'
 call plug#end()
 ```
 
-After installing the plugin, you can start using `:FilePicker` by simply typing `-` in normal mode, or by executing `:FilePicker` in command mode.
 
+# Command
+
+- :FilePicker [path]
+  - Start picker in path.
+  - If omitted, then start in the current buffer's directory (or CWD if none).
+  - Select multiple files; the first is opened, the rest are added to the arglist.
+
+- Completion: -complete=dir
+
+
+# Mapping
+
+- Default normal-mode mapping: - → <Plug>(FilePicker).
+- Remap by mapping <Plug>(FilePicker).
+- Disable default map by setting one of:
+  - let g:no_filepicker_maps = 1
+  - let g:no_plugin_maps = 1
+
+
+# Picker selection
+
+- Auto-detect order: lf, ranger, yazi, nnn.
+- Prefer a specific picker:
+  - let g:filepicker_prefer = 'lf'  " or 'ranger', 'yazi', 'nnn', or an absolute path
+  - Must be executable.
+
+
+# Options
+
+- Hijack Netrw directory buffers (new):
+  - let g:filepicker_hijack_netrw = 1
+  - When enabled, intercept opening of directories and launch the external picker instead.
+    - Applies on startup with directory arguments, when entering a directory buffer, and when netrw would have been opened.
+    - Closes the temporary directory buffer after launching the picker.
+  - Has effect only when an external picker is available; otherwise :FilePicker falls back to netrw.
+  - Disable by setting let g:filepicker_hijack_netrw = 0.
+
+# Behavior
+
+- If no supported picker is available, :FilePicker falls back to netrw to open the target directory.
+- With an external picker:
+  - Neovim: use termopen() in a temporary terminal buffer, then wipe it on exit.
+  - Vim with +terminal: use term_start(), then wipe the terminal buffer on exit.
+  - Without terminal support: synchronously invoke the picker via :silent ! and return to Vim on exit.
+
+- Selection transport:
+  - LF: lf -selection-path <tempfile>
+  - Ranger: ranger --choosefiles=<tempfile> [--selectfile <file>]
+  - Yazi: yazi --chooser-file=<tempfile>
+  - NNN: nnn -p <tempfile>
+
+
+# Examples
+
+```vim
+" Prefer LF if installed; otherwise auto-detect
+let g:filepicker_prefer = 'lf'
+
+" Disable hijacking to keep netrw directory buffers
+let g:filepicker_hijack_netrw = 0
+
+" Custom mapping
+nnoremap <silent> <leader>- <Plug>(FilePicker)
+
+" Start picker in a specific path
+" :FilePicker ~/projects
+```
+
+# Requirements
+
+- Neovim or Vim.
+- Preferred: Neovim or Vim with +terminal support for in-editor terminal.
+- Without +terminal, synchronous shell fallback is used.
+
+
+# Notes
+
+- On multiple selections, open the first selection and add the rest to the arglist (for :argdo, :next, etc.).
+- When hijacking is enabled, netrw is prevented from taking over directory buffers; the picker is launched instead.
+
+
+# Links
+
+- Ranger: https://ranger.github.io/
+- LF: https://github.com/gokcehan/lf
+- Yazi: https://github.com/sxyazi/yazi
+- NNN: https://github.com/jarun/nnn
+
+
+# Changelog
+
+- Added g:filepicker_hijack_netrw to replace netrw directory views with the selected external picker.
+- Improved startup path detection and file preselection.
