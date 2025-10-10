@@ -173,17 +173,41 @@ endfunction
 " Script-local state: external picker presence and restoration context.
 let s:_fp_prev_bufnr = -1
 
+" Save context and prevent 'wipe' for the previous buffer while the picker runs.
 function! s:save() abort
-  " Save context to restore after the picker exits.
-  let s:_fp_prev_bufnr = bufnr('%')
+  let s:_fp_prev_bufnr      = bufnr('%')
+  let s:_fp_prev_bufhidden  = getbufvar(s:_fp_prev_bufnr, '&bufhidden')
+  let s:_fp_prev_hidden_opt = &hidden
+
+  " Only adjust real file-like buffers that would be wiped when hidden.
+  if s:_fp_prev_bufnr > 0
+        \ && bufexists(s:_fp_prev_bufnr)
+        \ && getbufvar(s:_fp_prev_bufnr, '&buftype') ==# ''
+        \ && s:_fp_prev_bufhidden ==# 'wipe'
+    " Ensure switching away from a modified buffer is allowed.
+    set hidden
+    " Prevent immediate wipe on hide; will restore later.
+    call setbufvar(s:_fp_prev_bufnr, '&bufhidden', 'hide')
+  endif
 endfunction
 
-" Restore the window/tab/buffer that was active before FilePicker.
+" Restore the previous window/buffer and original options.
 function! s:restore() abort
-  let prev_buf  = get(s:, '_fp_prev_bufnr', -1)
+  let prev_buf = get(s:, '_fp_prev_bufnr', -1)
 
+  " Return to previous buffer if no files were selected.
   if prev_buf > 0 && bufexists(prev_buf) && bufnr('%') != prev_buf && empty(s:names)
     execute 'buffer' prev_buf
+  endif
+
+  " Restore original bufhidden for the previous buffer.
+  if exists('s:_fp_prev_bufhidden') && prev_buf > 0 && bufexists(prev_buf)
+    call setbufvar(prev_buf, '&bufhidden', s:_fp_prev_bufhidden)
+  endif
+
+  " Restore global 'hidden' if it was off.
+  if exists('s:_fp_prev_hidden_opt') && !s:_fp_prev_hidden_opt
+    set nohidden
   endif
 endfunction
 
