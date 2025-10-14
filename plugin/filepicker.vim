@@ -66,7 +66,7 @@ if empty(s:_picker)
         endtry
       endif
     else
-      execute 'edit' path
+      execute 'edit' fnameescape(path)
     endif
   endfunction
   finish
@@ -191,6 +191,7 @@ function! s:save() abort
   endif
 endfunction
 
+let s:names = []
 " Restore the previous window/buffer and original options.
 function! s:restore() abort
   let prev_buf = get(s:, '_fp_prev_bufnr', -1)
