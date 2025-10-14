@@ -1,7 +1,6 @@
 " Use Ranger/LF/Yazi/NNN to select and open file(s) in (Neo)Vim.
 "
 " You need to either
-"
 " - copy the content of this file to your ~/.vimrc resp. ~/.config/nvim/init.vim,
 " - or put it into ~/.vim/plugin respectively ~/.config/nvim/plugin,
 " - or source this file directly:
@@ -15,25 +14,46 @@
 "
 " A mapping to - is provided below that falls back to built-in Netrw if none of
 " Ranger/LF/Yazi/NNN is available.
+"
+" Options:
+" - g:filepicker_prefer: command name or full path (e.g. 'lf', 'ranger', '/usr/bin/ranger')
+" - g:filepicker_args: Dict of extra arguments per picker, list or string.
+"     Example:
+"       let g:filepicker_args = {
+"         \ 'ranger': ['--choosedir=/tmp/dir'],   " extra per picker
+"         \ '*': '--chooseflags something'        " default for all
+"       \ }
+" - g:filepicker_open: how to open the first selected file:
+"     'drop' (default), 'edit', 'split', 'vsplit', 'tab', 'tabedit'
+" - g:filepicker_hijack_netrw: 1 (default) to replace netrw directory buffers.
+"
+" Notes:
+" - The picker is spawned with cwd set to the desired start directory. This avoids
+"   reliance on positional path semantics across pickers.
+" - For pickers that support selecting a specific file on start, we pass that file
+"   explicitly (e.g. ranger --selectfile FILE). Otherwise, the cwd is used.
 
 if &compatible || exists('g:loaded_filepicker') | finish | endif
 let g:loaded_filepicker = 1
 
-" Picker selection (prefer user choice, otherwise auto-detect; order: lf, ranger, yazi, nnn).
-let s:_picker = ''
+" Detect picker: keep both the command to run and its short name for feature handling.
+let s:_picker_cmd  = ''
+let s:_picker_name = ''
+
 if exists('g:filepicker_prefer') && type(g:filepicker_prefer) == type('') && executable(g:filepicker_prefer)
-  let s:_picker = g:filepicker_prefer
+  let s:_picker_cmd  = g:filepicker_prefer
+  let s:_picker_name = fnamemodify(g:filepicker_prefer, ':t')
 else
   if executable('lf')
-    let s:_picker = 'lf'
+    let s:_picker_cmd = 'lf'     | let s:_picker_name = 'lf'
   elseif executable('ranger')
-    let s:_picker = 'ranger'
+    let s:_picker_cmd = 'ranger' | let s:_picker_name = 'ranger'
   elseif executable('yazi')
-    let s:_picker = 'yazi'
+    let s:_picker_cmd = 'yazi'   | let s:_picker_name = 'yazi'
   elseif executable('nnn')
-    let s:_picker = 'nnn'
+    let s:_picker_cmd = 'nnn'    | let s:_picker_name = 'nnn'
   else
-    let s:_picker = ''
+    let s:_picker_cmd = ''       | let s:_picker_name = ''
   endif
 endif
 
@@ -45,7 +65,7 @@ if !exists("g:no_plugin_maps") && !exists("g:no_filepicker_maps")
   endif
 endif
 
-if empty(s:_picker)
+if empty(s:_picker_cmd)
   " No external picker; netrw fallback.
   command! -nargs=? -bar -complete=dir FilePicker call <sid>Opendir(<q-args>)
   function! s:Opendir(dir) abort
@@ -107,35 +127,46 @@ function! FilePicker(...) abort
     endif
   endif
 
-  let cmd = s:build_cmd(s:_picker, start_dir, select_file)
+  let cmd = s:build_cmd(s:_picker_name, select_file)
   if empty(cmd)
     echohl WarningMsg | echom "[filepicker] No compatible picker found." | echohl None
     return
   endif
 
-  call s:term(cmd)
+  call s:term(cmd, start_dir)
+endfunction
+
+function! s:_extra_args(name) abort
+  if !exists('g:filepicker_args') | return [] | endif
+  if type(g:filepicker_args) != type({}) | return [] | endif
+  let val = get(g:filepicker_args, a:name, get(g:filepicker_args, '*', []))
+  if type(val) == type([])
+    return copy(val)
+  elseif type(val) == type('')
+    return split(val)
+  endif
+  return []
 endfunction
 
 " Build the external picker command list for termopen/term_start or shell fallback.
-function! s:build_cmd(picker, start_dir, select_file) abort
+function! s:build_cmd(picker_name, select_file) abort
   let cmd = []
-  if a:picker ==# 'lf'
-    let cmd = ['lf', '-selection-path', s:temp]
-  elseif a:picker ==# 'ranger'
-    let cmd = ['ranger', '--choosefiles=' . s:temp]
+  let extra = s:_extra_args(a:picker_name)
+  if a:picker_name ==# 'lf'
+    let cmd = [s:_picker_cmd, '-selection-path', s:temp]
+  elseif a:picker_name ==# 'ranger'
+    let cmd = [s:_picker_cmd, '--choosefiles=' . s:temp]
     if !empty(a:select_file) && filereadable(a:select_file)
       call add(cmd, '--selectfile')
     endif
-  elseif a:picker ==# 'yazi'
-    let cmd = ['yazi', '--chooser-file=' . s:temp]
-  elseif a:picker ==# 'nnn'
-    let cmd = ['nnn', '-p', s:temp]
+  elseif a:picker_name ==# 'yazi'
+    let cmd = [s:_picker_cmd, '--chooser-file=' . s:temp]
+  elseif a:picker_name ==# 'nnn'
+    let cmd = [s:_picker_cmd, '-p', s:temp]
   endif
   if empty(cmd) | return [] | endif
   if !empty(a:select_file) && filereadable(a:select_file)
     call add(cmd, a:select_file)
-  elseif !empty(a:start_dir)
-    call add(cmd, a:start_dir)
   endif
   return cmd
 endfunction
@@ -148,8 +179,6 @@ function! s:_keep_windows_open(buf) abort
   if exists('*win_findbuf')
     let wins = win_findbuf(a:buf)
   endif
-  " If win_findbuf() is not available or returns nothing, at least protect the
-  " current window if it shows the buffer.
   if empty(wins)
     if bufnr('%') == a:buf
       call s:_open_scratch_in_current_win()
@@ -179,14 +208,11 @@ function! s:save() abort
   let s:_fp_prev_bufhidden  = getbufvar(s:_fp_prev_bufnr, '&bufhidden')
   let s:_fp_prev_hidden_opt = &hidden
 
-  " Only adjust real file-like buffers that would be wiped when hidden.
   if s:_fp_prev_bufnr > 0
         \ && bufexists(s:_fp_prev_bufnr)
         \ && getbufvar(s:_fp_prev_bufnr, '&buftype') ==# ''
         \ && s:_fp_prev_bufhidden ==# 'wipe'
-    " Ensure switching away from a modified buffer is allowed.
     set hidden
-    " Prevent immediate wipe on hide; will restore later.
     call setbufvar(s:_fp_prev_bufnr, '&bufhidden', 'hide')
   endif
 endfunction
@@ -196,29 +222,47 @@ let s:names = []
 function! s:restore() abort
   let prev_buf = get(s:, '_fp_prev_bufnr', -1)
 
-  " Return to previous buffer if no files were selected.
   if prev_buf > 0 && bufexists(prev_buf) && bufnr('%') != prev_buf && empty(s:names)
     execute 'buffer' prev_buf
   endif
 
-  " Restore original bufhidden for the previous buffer.
   if exists('s:_fp_prev_bufhidden') && prev_buf > 0 && bufexists(prev_buf)
     call setbufvar(prev_buf, '&bufhidden', s:_fp_prev_bufhidden)
   endif
 
-  " Restore global 'hidden' if it was off.
   if exists('s:_fp_prev_hidden_opt') && !s:_fp_prev_hidden_opt
     set nohidden
   endif
 endfunction
 
+function! s:_suppress_bufenter_start() abort
+  let s:_saved_eventignore = &eventignore
+  if &eventignore =~# '\<BufEnter\>'
+    return
+  endif
+  if empty(&eventignore)
+    let &eventignore = 'BufEnter'
+  else
+    let &eventignore = &eventignore . ',BufEnter'
+  endif
+endfunction
+
+function! s:_suppress_bufenter_end() abort
+  if exists('s:_saved_eventignore')
+    let &eventignore = s:_saved_eventignore
+    unlet s:_saved_eventignore
+  endif
+endfunction
+
 if has('nvim')
   " Neovim: run picker in a dedicated terminal buffer, wipe it on exit, then open files and restore.
-  function! s:term(cmd) abort
+  function! s:term(cmd, cwd) abort
     enew
     let term_buf = bufnr('%')
     setlocal nobuflisted
-    call termopen(a:cmd, {'on_exit': function('s:_nvim_term_on_exit', [term_buf])})
+    let opts = {'on_exit': function('s:_nvim_term_on_exit', [term_buf])}
+    if !empty(a:cwd) | let opts.cwd = a:cwd | endif
+    call termopen(a:cmd, opts)
     startinsert
   endfunction
 
@@ -228,35 +272,38 @@ if has('nvim')
   endfunction
 
   function! s:_open_and_wipe(term_buf, ...) abort
-    " Ensure the window/tab stays open even if the terminal was the only buffer.
-    call s:_keep_windows_open(a:term_buf)
-    if bufexists(a:term_buf)
-      execute 'bwipeout!' a:term_buf
-    endif
+    call s:_suppress_bufenter_start()
+    try
+      call s:_keep_windows_open(a:term_buf)
+      if bufexists(a:term_buf)
+        execute 'bwipeout!' a:term_buf
+      endif
+    finally
+      call s:_suppress_bufenter_end()
+    endtry
     call s:open()
     call s:restore()
   endfunction
 else
   if has('terminal')
-    function! s:term(cmd) abort
-      " Start the terminal in the current window.
-      let term_buf = term_start(a:cmd, {'curwin': 1, 'exit_cb': function('s:_vim_term_on_exit')})
+    function! s:term(cmd, cwd) abort
+      let opts = {'curwin': 1, 'exit_cb': function('s:_vim_term_on_exit')}
+      if !empty(a:cwd) | let opts.cwd = a:cwd | endif
+      let term_buf = term_start(a:cmd, opts)
       setlocal nobuflisted
     endfunction
 
-    " Exit callback: schedule UI restore to the main loop to avoid E523.
     function! s:_vim_term_on_exit(job, status) abort
-      " Map job object to its terminal buffer number.
       let term_buf = s:term_buf_for_job(a:job)
-
-      " Replace the terminal buffer with a scratch in any window showing it so the
-      " window/tabpage won't be closed when the buffer is wiped.
-      if term_buf > 0 && bufexists(term_buf)
-        call s:_keep_windows_open(term_buf)
-        execute 'bwipeout!' term_buf
-      endif
-
-      " Continue with custom logic.
+      call s:_suppress_bufenter_start()
+      try
+        if term_buf > 0 && bufexists(term_buf)
+          call s:_keep_windows_open(term_buf)
+          execute 'bwipeout!' term_buf
+        endif
+      finally
+        call s:_suppress_bufenter_end()
+      endtry
       call s:open()
       call s:restore()
     endfunction
@@ -269,9 +316,19 @@ else
     endfunction
   else
     " Last resort: synchronous shell.
-    function! s:term(cmd) abort
+    function! s:term(cmd, cwd) abort
       let parts = map(copy(a:cmd), 'shellescape(v:val)')
-      execute 'silent !' . join(parts, ' ')
+      let save_dir = getcwd()
+      try
+        if !empty(a:cwd)
+          call chdir(a:cwd)
+        endif
+        execute 'silent !' . join(parts, ' ')
+      finally
+        if !empty(a:cwd)
+          call chdir(save_dir)
+        endif
+      endtry
       call s:open()
       call s:restore()
       redraw!
@@ -292,7 +349,12 @@ function! s:open(...) abort
     redraw!
     return
   endif
-  execute 'edit' fnameescape(s:names[0])
+
+  let how = get(g:, 'filepicker_open', 'drop')
+  if index(['tab', 'tabdrop', 'tabedit'], how) >= 0 | let how = 'tab drop' | endif
+  if index(['tab drop', 'split', 'vsplit'], how) == -1 | let how = 'drop' | endif
+  execute how fnameescape(s:names[0])
+
   for name in s:names[1:]
     execute 'argadd' fnameescape(name)
   endfor
