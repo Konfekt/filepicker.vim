@@ -40,11 +40,8 @@ call plug#end()
 # Picker selection
 
 - Auto-detect order: `lf`, `ranger`, `yazi`, `nnn`.
-- Prefer a specific picker:
-    - `let g:filepicker_prefer = 'lf'`  " or 'ranger', 'yazi', 'nnn', or an absolute path like '/usr/bin/ranger'
-    - Must be executable.
+- Prefer a specific picker by `let g:filepicker_prefer = 'lf'` or 'ranger', 'yazi', 'nnn', or an absolute path like '/usr/bin/ranger'
 - If none is available, falls back to `netrw`.
-
 
 # Options
 
@@ -54,7 +51,7 @@ call plug#end()
     - Values may be a List or a String.
 
 - How to open the first selected file (default: `'drop'`):
-    - `let g:filepicker_open = 'drop'`  " one of: 'drop', 'edit', 'split', 'vsplit', 'tab', 'tabedit'
+    - `let g:filepicker_open = 'drop'` or one of: 'drop', 'edit', 'split', 'vsplit', 'tab', 'tabedit'
     - For `'tab'`/`'tabedit'`, a tab-aware drop is used.
 
 - Hijack Netrw directory buffers (enabled by default):
@@ -64,33 +61,6 @@ call plug#end()
     - Closes the temporary directory buffer after launching the picker.
     - Has effect only when an external picker is available; otherwise `:FilePicker` falls back to `netrw`.
     - Disable by setting `let g:filepicker_hijack_netrw = 0`.
-
-
-# Behavior
-
-- Working directory:
-    - Spawn the picker with `cwd` set to the desired start directory.
-    - Avoid rely-on-positional-path semantics across pickers.
-
-- File preselection:
-    - If the picker supports starting with a specific file selected, pass it explicitly (e.g. `ranger --selectfile FILE`).
-    - Otherwise rely on the picker’s `cwd`.
-
-- Editor integration:
-    - Neovim: use `termopen()` in a temporary terminal buffer, then wipe it on exit.
-    - Vim with `+terminal`: use `term_start()`, then wipe the terminal buffer on exit.
-    - Without terminal support: synchronously invoke the picker via `:silent !` and return on exit.
-
-- Selection transport:
-    - LF: `lf -selection-path <tempfile>`
-    - Ranger: `ranger --choosefiles=<tempfile> [--selectfile <file>]`
-    - Yazi: `yazi --chooser-file=<tempfile>`
-    - NNN: `nnn -p <tempfile>`
-
-- Multiple selections:
-    - Open the first selection as configured by `g:filepicker_open`.
-    - Add the rest to the `arglist` for `:argdo`, `:next`, etc.
-
 
 # Examples
 
@@ -121,13 +91,6 @@ nnoremap <silent> <leader>- <Plug>(FilePicker)
 ```
 
 
-# Requirements
-
-- Neovim or Vim.
-- Preferred: Neovim or Vim with `+terminal` support for in-editor terminal.
-- Without `+terminal`, synchronous shell fallback is used.
-
-
 # Notes
 
 - On multiple selections, open the first selection and add the rest to the arglist (for :argdo, :next, etc.).
@@ -137,6 +100,39 @@ nnoremap <silent> <leader>- <Plug>(FilePicker)
     - Ranger `--choosefiles`, `--selectfile`: https://github.com/ranger/ranger/wiki/Integration-with-other-programs#file-chooser
     - Yazi `--chooser-file`: https://yazi-rs.github.io/docs/features/#chooser-mode
     - NNN `-p`: https://github.com/jarun/nnn/wiki/Usage#environment-and-options
+
+
+# Behavior
+
+- Working directory:
+    - Spawn the picker with `cwd` set to the desired start directory.
+    - Avoid rely-on-positional-path semantics across pickers.
+
+- File preselection:
+    - If the picker supports starting with a specific file selected, pass it explicitly (e.g. `ranger --selectfile FILE`).
+    - Otherwise rely on the picker’s `cwd`.
+
+- Editor integration:
+    - Neovim: use `termopen()` in a temporary terminal buffer, then wipe it on exit.
+    - Vim with `+terminal`: use `term_start()`, then wipe the terminal buffer on exit.
+    - Without terminal support: synchronously invoke the picker via `:silent !` and return on exit.
+
+- Selection transport:
+    - LF: `lf -selection-path <tempfile>`
+    - Ranger: `ranger --choosefiles=<tempfile> [--selectfile <file>]`
+    - Yazi: `yazi --chooser-file=<tempfile>`
+    - NNN: `nnn -p <tempfile>`
+
+- Multiple selections:
+    - Open the first selection as configured by `g:filepicker_open`.
+    - Add the rest to the `arglist` for `:argdo`, `:next`, etc.
+
+
+# Requirements
+
+- Neovim or Vim.
+- Preferred: Neovim or Vim with `+terminal` support for in-editor terminal.
+- Without `+terminal`, synchronous shell fallback is used.
 
 
 # Changelog
