@@ -98,6 +98,7 @@ function! FilePicker(...) abort
   call s:save()
   " Use a fresh temp file for each run to avoid stale selections.
   let s:temp = tempname()
+  let s:temp_dir = tempname()
 
   " Resolve input path, defaulting to the current buffer's path or CWD.
   let user_path = (a:0 ? a:1 : '')
@@ -133,7 +134,14 @@ function! FilePicker(...) abort
     return
   endif
 
-  call s:term(cmd, start_dir)
+  let env = {}
+  if s:_picker_name ==# 'nnn'
+    let env = {'NNN_TMPFILE': s:temp_dir}
+  elseif s:_picker_name ==# 'lf'
+    let env = {'LF_CD_FILE': s:temp_dir}
+  endif
+
+  call s:term(cmd, start_dir, env)
 endfunction
 
 function! s:_extra_args(name) abort
@@ -155,7 +163,7 @@ function! s:build_cmd(picker_name, select_file) abort
   if a:picker_name ==# 'lf'
     let cmd = [s:_picker_cmd, '-selection-path', s:temp]
   elseif a:picker_name ==# 'ranger'
-    let cmd = [s:_picker_cmd, '--choosefiles=' . s:temp]
+    let cmd = [s:_picker_cmd, '--choosefiles=' . s:temp, '--choosedir=' . s:temp_dir]
     if !empty(a:select_file) && filereadable(a:select_file)
       call add(cmd, '--selectfile')
     endif
@@ -256,12 +264,13 @@ endfunction
 
 if has('nvim')
   " Neovim: run picker in a dedicated terminal buffer, wipe it on exit, then open files and restore.
-  function! s:term(cmd, cwd) abort
+  function! s:term(cmd, cwd, env) abort
     enew
     let term_buf = bufnr('%')
     setlocal nobuflisted
     let opts = {'on_exit': function('s:_nvim_term_on_exit', [term_buf])}
     if !empty(a:cwd) | let opts.cwd = a:cwd | endif
+    if !empty(a:env) | let opts.env = a:env | endif
     call termopen(a:cmd, opts)
     startinsert
   endfunction
@@ -286,10 +295,94 @@ if has('nvim')
   endfunction
 else
   if has('terminal')
-    function! s:term(cmd, cwd) abort
+    function! s:_with_env_cmd(cmd, env) abort
+      " Validate inputs.
+      if type(a:cmd) != type([]) || empty(a:cmd) | return a:cmd | endif
+      if type(a:env) != type({}) || empty(a:env) | return a:cmd | endif
+
+      " Prefer POSIX `env` whenever available (including MSYS2/Cygwin/Git for Windows).
+      if executable('env')
+        let l:env_cmd = ['env']
+        for l:k in sort(keys(a:env))
+          call add(l:env_cmd, l:k . '=' . a:env[l:k])
+        endfor
+        return l:env_cmd + a:cmd
+      endif
+
+      " Windows fallback: rewrite cmd.exe and PowerShell payloads.
+      if has('win32') || has('win64')
+        let l:exe = tolower(fnamemodify(a:cmd[0], ':t'))
+
+        if l:exe ==# 'cmd.exe' || l:exe ==# 'cmd'
+          return s:_with_env_cmd_cmdexe(a:cmd, a:env)
+        endif
+
+        if l:exe ==# 'powershell.exe' || l:exe ==# 'powershell' || l:exe ==# 'pwsh.exe' || l:exe ==# 'pwsh'
+          return s:_with_env_cmd_powershell(a:cmd, a:env)
+        endif
+      endif
+
+      return a:cmd
+    endfunction
+
+    function! s:_with_env_cmd_cmdexe(cmd, env) abort
+      " Inject `set "K=V"&` before the existing /C or /K command string.
+      let l:out = copy(a:cmd)
+      let l:lc = map(copy(l:out), 'tolower(v:val)')
+
+      let l:i = index(l:lc, '/c')
+      if l:i < 0 | let l:i = index(l:lc, '/k') | endif
+      if l:i < 0 || l:i + 1 >= len(l:out) | return a:cmd | endif
+
+      let l:payload = l:out[l:i + 1]
+      let l:prefix = ''
+
+      for l:k in sort(keys(a:env))
+        let l:v = a:env[l:k]
+        let l:v = substitute(l:v, '"', '^"', 'g')
+        let l:prefix .= 'set "' . l:k . '=' . l:v . '"&'
+      endfor
+
+      let l:out[l:i + 1] = l:prefix . l:payload
+      return l:out
+    endfunction
+
+    function! s:_with_env_cmd_powershell(cmd, env) abort
+      " Inject `$env:K='V';` before the existing -Command (or -c) script string.
+      let l:out = copy(a:cmd)
+      let l:lc = map(copy(l:out), 'tolower(v:val)')
+
+      let l:i = index(l:lc, '-command')
+      if l:i < 0 | let l:i = index(l:lc, '-c') | endif
+      if l:i < 0 || l:i + 1 >= len(l:out) | return a:cmd | endif
+
+      let l:script = l:out[l:i + 1]
+      let l:prefix = ''
+
+      for l:k in sort(keys(a:env))
+        let l:v = a:env[l:k]
+        let l:v = substitute(l:v, "'", "''", 'g')
+        let l:prefix .= '$env:' . l:k . " = '" . l:v . "'; "
+      endfor
+
+      let l:out[l:i + 1] = l:prefix . l:script
+      return l:out
+    endfunction
+
+    function! s:term(cmd, cwd, env) abort
       let opts = {'curwin': 1, 'exit_cb': function('s:_vim_term_on_exit')}
       if !empty(a:cwd) | let opts.cwd = a:cwd | endif
-      let term_buf = term_start(a:cmd, opts)
+      if type(a:env) == type({}) && !empty(a:env) | let opts.env = a:env | endif
+      try
+        let term_buf = term_start(a:cmd, opts)
+      catch /^Vim\%((\a\+)\)\=:E475/
+        if has_key(opts, 'env')
+          unlet opts.env
+          let term_buf = term_start(s:_with_env_cmd(a:cmd, a:env), opts)
+        else
+          throw v:exception
+        endif
+      endtry
       setlocal nobuflisted
     endfunction
 
@@ -316,14 +409,24 @@ else
     endfunction
   else
     " Last resort: synchronous shell.
-    function! s:term(cmd, cwd) abort
+    function! s:term(cmd, cwd, env) abort
       let parts = map(copy(a:cmd), 'shellescape(v:val)')
+      let env_parts = []
+      if type(a:env) == type({}) && !empty(a:env) && executable('env')
+        for [k, v] in items(a:env)
+          call add(env_parts, shellescape(k . '=' . v))
+        endfor
+      endif
       let save_dir = getcwd()
       try
         if !empty(a:cwd)
           call chdir(a:cwd)
         endif
-        execute 'silent !' . join(parts, ' ')
+        if !empty(env_parts)
+          execute 'silent !env ' . join(env_parts, ' ') . ' ' . join(parts, ' ')
+        else
+          execute 'silent !' . join(parts, ' ')
+        endif
       finally
         if !empty(a:cwd)
           call chdir(save_dir)
@@ -336,28 +439,79 @@ else
   endif
 endif
 
+function! s:_read_first_line(path) abort
+  if type(a:path) != type('') || empty(a:path) || !filereadable(a:path)
+    return ''
+  endif
+  let lines = readfile(a:path, '', 1)
+  if empty(lines)
+    return ''
+  endif
+  return substitute(lines[0], '\r$', '', '')
+endfunction
+
+function! s:_yazi_last_dir() abort
+  let state_dir = ''
+  if exists('$YAZI_STATE_DIR') && !empty($YAZI_STATE_DIR)
+    let state_dir = $YAZI_STATE_DIR
+  elseif has('macunix')
+    let state_dir = !empty($HOME) ? ($HOME . '/Library/State/yazi') : ''
+  elseif has('win32')
+    let state_dir = (exists('$LOCALAPPDATA') && !empty($LOCALAPPDATA)) ? ($LOCALAPPDATA . '\yazi') : ''
+  else
+    let base = (exists('$XDG_STATE_HOME') && !empty($XDG_STATE_HOME)) ? $XDG_STATE_HOME : ($HOME . '/.local/state')
+    let state_dir = base . '/yazi'
+  endif
+  if empty(state_dir)
+    return ''
+  endif
+  return s:_read_first_line(state_dir . '/cwd')
+endfunction
+
 " Open files selected by the external picker.
 function! s:open(...) abort
   let s:names = []
-  if !exists('s:temp') || type(s:temp) != type('') || empty(s:temp) || !filereadable(s:temp)
-    redraw!
-    return
+
+  if exists('s:temp') && filereadable(s:temp)
+    let s:names = readfile(s:temp)
+    call delete(s:temp)
   endif
-  let s:names = readfile(s:temp)
-  call delete(s:temp)
-  if empty(s:names)
+
+  if !empty(s:names)
+    let how = get(g:, 'filepicker_open', 'drop')
+    if index(['tab', 'tabdrop', 'tabedit'], how) >= 0 | let how = 'tab drop' | endif
+    if index(['tab drop', 'split', 'vsplit'], how) == -1 | let how = 'drop' | endif
+    execute how fnameescape(s:names[0])
+
+    for name in s:names[1:]
+      execute 'argadd' fnameescape(name)
+    endfor
+
+    if exists('s:temp_dir') && filereadable(s:temp_dir)
+      call delete(s:temp_dir)
+    endif
+
     redraw!
     return
   endif
 
-  let how = get(g:, 'filepicker_open', 'drop')
-  if index(['tab', 'tabdrop', 'tabedit'], how) >= 0 | let how = 'tab drop' | endif
-  if index(['tab drop', 'split', 'vsplit'], how) == -1 | let how = 'drop' | endif
-  execute how fnameescape(s:names[0])
+  " No selection: try to cd to the picker's last directory on quit.
+  let last_dir = ''
 
-  for name in s:names[1:]
-    execute 'argadd' fnameescape(name)
-  endfor
+  if exists('s:temp_dir') && filereadable(s:temp_dir)
+    let last_dir = s:_read_first_line(s:temp_dir)
+    call delete(s:temp_dir)
+  elseif s:_picker_name ==# 'yazi'
+    let last_dir = s:_yazi_last_dir()
+  endif
+
+  if !empty(last_dir)
+    let last_dir = fnamemodify(last_dir, ':p')
+    if isdirectory(last_dir)
+      execute 'cd' fnameescape(last_dir)
+    endif
+  endif
+
   redraw!
 endfunction
 
