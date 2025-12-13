@@ -24,7 +24,7 @@
 "         \ '*': '--chooseflags something'        " default for all
 "       \ }
 " - g:filepicker_open: how to open the first selected file:
-"     'drop' (default), 'edit', 'split', 'vsplit', 'tab', 'tabedit'
+"     'drop' (default), 'edit', 'split', 'vsplit', 'tab', 'tabedit', 'tabdrop'
 " - g:filepicker_hijack_netrw: 1 (default) to replace netrw directory buffers.
 "
 " Notes:
@@ -94,6 +94,18 @@ endif
 
 command! -nargs=? -bar -complete=dir FilePicker call FilePicker(<q-args>)
 
+function! s:_normalize_pwd(dir) abort
+  if type(a:dir) != type('') || empty(a:dir)
+    return ''
+  endif
+  " Strip one trailing slash/backslash (except for root-like paths).
+  let p = a:dir
+  if strlen(p) > 1 && p =~# '[/\\]$'
+    let p = substitute(p, '[/\\]$', '', '')
+  endif
+  return p
+endfunction
+
 function! FilePicker(...) abort
   call s:save()
   " Use a fresh temp file for each run to avoid stale selections.
@@ -123,22 +135,25 @@ function! FilePicker(...) abort
     if filereadable(cur)
       let start_dir = fnamemodify(cur, ':h')
       if empty(select_file) | let select_file = cur | endif
-    elseif isdirectory(cur) | let start_dir = cur
-    else | let start_dir = getcwd()
+    elseif isdirectory(cur)
+      let start_dir = cur
+    else
+      let start_dir = getcwd()
     endif
   endif
 
-  let cmd = s:build_cmd(s:_picker_name, select_file)
+  let cmd = s:build_cmd(s:_picker_name, start_dir, select_file)
   if empty(cmd)
     echohl WarningMsg | echom "[filepicker] No compatible picker found." | echohl None
     return
   endif
 
-  let env = {}
+  " Ensure tools that consult $PWD (instead of getcwd()) still start correctly.
+  let env = {'PWD': s:_normalize_pwd(start_dir)}
   if s:_picker_name ==# 'lf'
-    let env = {'LF_CD_FILE': s:cwd_file}
+    let env['LF_CD_FILE'] = s:cwd_file
   elseif s:_picker_name ==# 'nnn'
-    let env = {'NNN_TMPFILE': s:cwd_file}
+    let env['NNN_TMPFILE'] = s:cwd_file
   endif
 
   call s:term(cmd, start_dir, env)
@@ -157,9 +172,10 @@ function! s:_extra_args(name) abort
 endfunction
 
 " Build the external picker command list for termopen/term_start or shell fallback.
-function! s:build_cmd(picker_name, select_file) abort
+function! s:build_cmd(picker_name, start_dir, select_file) abort
   let cmd = []
   let extra = s:_extra_args(a:picker_name)
+
   if a:picker_name ==# 'lf'
     let cmd = [s:_picker_cmd, '-selection-path', s:selection_file]
   elseif a:picker_name ==# 'ranger'
@@ -168,14 +184,26 @@ function! s:build_cmd(picker_name, select_file) abort
       call add(cmd, '--selectfile')
     endif
   elseif a:picker_name ==# 'yazi'
-    let cmd = [s:_picker_cmd, '--chooser-file=' . s:selection_file, '--cwd-file=' . s:cwd_file]
+    " Use space-separated args for compatibility.
+    let cmd = [s:_picker_cmd, '--chooser-file', s:selection_file, '--cwd-file', s:cwd_file]
   elseif a:picker_name ==# 'nnn'
     let cmd = [s:_picker_cmd, '-p', s:selection_file]
   endif
+
   if empty(cmd) | return [] | endif
+
+  " Add user extra args after built-in flags but before positional path.
+  if !empty(extra)
+    let cmd += extra
+  endif
+
+  " Prefer selecting a file when provided; otherwise pass the start directory explicitly.
   if !empty(a:select_file) && filereadable(a:select_file)
     call add(cmd, a:select_file)
+  elseif !empty(a:start_dir)
+    call add(cmd, a:start_dir)
   endif
+
   return cmd
 endfunction
 
@@ -270,7 +298,7 @@ if has('nvim')
     setlocal nobuflisted
     let opts = {'on_exit': function('s:_nvim_term_on_exit', [term_buf])}
     if !empty(a:cwd) | let opts.cwd = a:cwd | endif
-    if !empty(a:env) | let opts.env = a:env | endif
+    if type(a:env) == type({}) && !empty(a:env) | let opts.env = a:env | endif
     call termopen(a:cmd, opts)
     startinsert
   endfunction
@@ -461,8 +489,17 @@ function! s:open(...) abort
 
   if !empty(s:names)
     let how = get(g:, 'filepicker_open', 'drop')
-    if index(['tab', 'tabdrop', 'tabedit'], how) >= 0 | let how = 'tab drop' | endif
-    if index(['tab drop', 'split', 'vsplit'], how) == -1 | let how = 'drop' | endif
+
+    if how ==# 'tab'
+      let how = 'tabedit'
+    elseif how ==# 'tabdrop'
+      let how = 'tab drop'
+    endif
+
+    if index(['drop', 'edit', 'split', 'vsplit', 'tabedit', 'tab drop'], how) < 0
+      let how = 'drop'
+    endif
+
     execute how fnameescape(s:names[0])
 
     for name in s:names[1:]
@@ -514,7 +551,8 @@ if get(g:, 'filepicker_hijack_netrw', 1)
     let s:_fp_hijacking = 1
     try
       let dir = fnamemodify(a:dir, ':p')
-      noautocmd execute 'silent FilePicker' fnameescape(dir)
+      " Call directly to avoid Ex-escaping issues with fnameescape() + <q-args>.
+      silent! noautocmd call FilePicker(dir)
       if a:from_bufnr > 0 && bufexists(a:from_bufnr)
         silent! execute 'bwipeout!' a:from_bufnr
       endif
@@ -563,3 +601,4 @@ if get(g:, 'filepicker_hijack_netrw', 1)
     autocmd FileType netrw call s:OnFileTypeNetrw()
   augroup END
 endif
+
