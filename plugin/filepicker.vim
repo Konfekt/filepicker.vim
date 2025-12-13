@@ -97,8 +97,8 @@ command! -nargs=? -bar -complete=dir FilePicker call FilePicker(<q-args>)
 function! FilePicker(...) abort
   call s:save()
   " Use a fresh temp file for each run to avoid stale selections.
-  let s:temp = tempname()
-  let s:temp_dir = tempname()
+  let s:selection_file = tempname()
+  let s:cwd_file = tempname()
 
   " Resolve input path, defaulting to the current buffer's path or CWD.
   let user_path = (a:0 ? a:1 : '')
@@ -135,10 +135,10 @@ function! FilePicker(...) abort
   endif
 
   let env = {}
-  if s:_picker_name ==# 'nnn'
-    let env = {'NNN_TMPFILE': s:temp_dir}
-  elseif s:_picker_name ==# 'lf'
-    let env = {'LF_CD_FILE': s:temp_dir}
+  if s:_picker_name ==# 'lf'
+    let env = {'LF_CD_FILE': s:cwd_file}
+  elseif s:_picker_name ==# 'nnn'
+    let env = {'NNN_TMPFILE': s:cwd_file}
   endif
 
   call s:term(cmd, start_dir, env)
@@ -161,16 +161,16 @@ function! s:build_cmd(picker_name, select_file) abort
   let cmd = []
   let extra = s:_extra_args(a:picker_name)
   if a:picker_name ==# 'lf'
-    let cmd = [s:_picker_cmd, '-selection-path', s:temp]
+    let cmd = [s:_picker_cmd, '-selection-path', s:selection_file]
   elseif a:picker_name ==# 'ranger'
-    let cmd = [s:_picker_cmd, '--choosefiles=' . s:temp, '--choosedir=' . s:temp_dir]
+    let cmd = [s:_picker_cmd, '--choosefiles=' . s:selection_file, '--choosedir=' . s:cwd_file]
     if !empty(a:select_file) && filereadable(a:select_file)
       call add(cmd, '--selectfile')
     endif
   elseif a:picker_name ==# 'yazi'
-    let cmd = [s:_picker_cmd, '--chooser-file=' . s:temp]
+    let cmd = [s:_picker_cmd, '--chooser-file=' . s:selection_file, '--cwd-file=' . s:cwd_file]
   elseif a:picker_name ==# 'nnn'
-    let cmd = [s:_picker_cmd, '-p', s:temp]
+    let cmd = [s:_picker_cmd, '-p', s:selection_file]
   endif
   if empty(cmd) | return [] | endif
   if !empty(a:select_file) && filereadable(a:select_file)
@@ -450,31 +450,13 @@ function! s:_read_first_line(path) abort
   return substitute(lines[0], '\r$', '', '')
 endfunction
 
-function! s:_yazi_last_dir() abort
-  let state_dir = ''
-  if exists('$YAZI_STATE_DIR') && !empty($YAZI_STATE_DIR)
-    let state_dir = $YAZI_STATE_DIR
-  elseif has('macunix')
-    let state_dir = !empty($HOME) ? ($HOME . '/Library/State/yazi') : ''
-  elseif has('win32')
-    let state_dir = (exists('$LOCALAPPDATA') && !empty($LOCALAPPDATA)) ? ($LOCALAPPDATA . '\yazi') : ''
-  else
-    let base = (exists('$XDG_STATE_HOME') && !empty($XDG_STATE_HOME)) ? $XDG_STATE_HOME : ($HOME . '/.local/state')
-    let state_dir = base . '/yazi'
-  endif
-  if empty(state_dir)
-    return ''
-  endif
-  return s:_read_first_line(state_dir . '/cwd')
-endfunction
-
 " Open files selected by the external picker.
 function! s:open(...) abort
   let s:names = []
 
-  if exists('s:temp') && filereadable(s:temp)
-    let s:names = readfile(s:temp)
-    call delete(s:temp)
+  if exists('s:selection_file') && filereadable(s:selection_file)
+    let s:names = readfile(s:selection_file)
+    call delete(s:selection_file)
   endif
 
   if !empty(s:names)
@@ -487,9 +469,7 @@ function! s:open(...) abort
       execute 'argadd' fnameescape(name)
     endfor
 
-    if exists('s:temp_dir') && filereadable(s:temp_dir)
-      call delete(s:temp_dir)
-    endif
+    if exists('s:cwd_file') && filereadable(s:cwd_file) | call delete(s:cwd_file) | endif
 
     redraw!
     return
@@ -498,11 +478,9 @@ function! s:open(...) abort
   " No selection: try to cd to the picker's last directory on quit.
   let last_dir = ''
 
-  if exists('s:temp_dir') && filereadable(s:temp_dir)
-    let last_dir = s:_read_first_line(s:temp_dir)
-    call delete(s:temp_dir)
-  elseif s:_picker_name ==# 'yazi'
-    let last_dir = s:_yazi_last_dir()
+  if exists('s:cwd_file') && filereadable(s:cwd_file)
+    let last_dir = s:_read_first_line(s:cwd_file)
+    call delete(s:cwd_file)
   endif
 
   if !empty(last_dir)

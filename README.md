@@ -79,7 +79,7 @@ call plug#end()
         - `filepicker.vim` exports `NNN_TMPFILE=<tempfile>`.
         - nnn writes its last directory to this file on exit.
     - **yazi**
-        - `filepicker.vim` reads Yazi's `cwd` from its state directory (or `$YAZI_STATE_DIR`).
+        - `filepicker.vim` reads Yazi's `cwd` from file supplied to (or `--choosedir`).
     - **lf**
         - `filepicker.vim` exports `LF_CD_FILE=<tempfile>` for the duration of the picker run.
         - lf does not write this file by default; configuration in `lfrc` is required (see below).
@@ -149,7 +149,7 @@ nnoremap <silent> <leader>- <Plug>(FilePicker)
 - Picker CLI flags referenced:
     - LF `-selection-path`: https://github.com/gokcehan/lf#remote-control
     - Ranger `--choosefiles`, `--selectfile`, `--choosedir`: https://github.com/ranger/ranger/wiki/Integration-with-other-programs#file-chooser
-    - Yazi `--chooser-file`: https://yazi-rs.github.io/docs/features/#chooser-mode
+    - Yazi `--chooser-file`, `--cwd-file`: https://yazi-rs.github.io/docs/features/#chooser-mode
     - NNN `-p`, `NNN_TMPFILE`: https://github.com/jarun/nnn/wiki/Usage#environment-and-options
 
 
