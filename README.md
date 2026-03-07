@@ -36,7 +36,7 @@ call plug#end()
 
 # Picker selection
 
-- Auto-detect order: `yazi`, `lf`, `ranger`, `nnn`.
+- Auto-detect order: `yazi` (though invalid in `GVim`), `lf`, `ranger`, `nnn`.
 - Prefer a specific picker by `let g:filepicker_prefer = 'lf'` or 'ranger', 'yazi', 'nnn', or an absolute path like '/usr/bin/ranger'
 - If none is available, falls back to `netrw`.
 

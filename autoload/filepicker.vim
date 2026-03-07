@@ -3,6 +3,17 @@ let s:_picker_name = ''
 let s:_picker_detected = 0
 let s:_supported_pickers = ['yazi', 'lf', 'ranger', 'nnn']
 
+function! s:_picker_allowed(name) abort
+  if index(s:_supported_pickers, a:name) < 0 | return 0 | endif
+
+  if a:name ==# 'yazi' && has('gui_running') && !has('nvim')
+        \ && !get(g:, 'filepicker_allow_yazi_in_gui', 0)
+    return 0
+  endif
+
+  return 1
+endfunction
+
 function! s:detect_picker() abort
   if s:_picker_detected
     return
@@ -12,15 +23,15 @@ function! s:detect_picker() abort
   let prefer = get(g:, 'filepicker_prefer', '')
   if type(prefer) == v:t_string && !empty(prefer) && executable(prefer)
     let name = fnamemodify(prefer, ':t:r')
-    if index(s:_supported_pickers, name) >= 0
-      let s:_picker_cmd  = prefer
+    if s:_picker_allowed(name)
+      let s:_picker_cmd = prefer
       let s:_picker_name = name
       return
     endif
   endif
 
   for name in s:_supported_pickers
-    if executable(name)
+    if executable(name) && s:_picker_allowed(name)
       let s:_picker_cmd  = name
       let s:_picker_name = name
       return
@@ -154,6 +165,9 @@ endfunction
 
 " Build the external picker command list for termopen/term_start or shell fallback.
 function! s:build_cmd(picker_name, start_dir, select_file) abort
+  if !s:_picker_allowed(a:picker_name)
+    return []
+  endif
   let cmd = []
   let extra = s:_extra_args(a:picker_name)
 
@@ -410,6 +424,7 @@ else
       endtry
 
       setlocal nobuflisted
+      startinsert
     endfunction
 
     function! s:_vim_term_on_exit(job, status) abort
@@ -558,9 +573,9 @@ function! s:OpenDirWithPicker(dir, from_bufnr) abort
   try
     let dir = fnamemodify(a:dir, ':p')
     " Call directly to avoid Ex-escaping issues with fnameescape() + <q-args>.
-    silent! noautocmd call filepicker#FilePicker(dir)
+    noautocmd call filepicker#FilePicker(dir)
     if a:from_bufnr > 0 && bufexists(a:from_bufnr)
-      silent! execute 'bwipeout!' a:from_bufnr
+      execute 'bwipeout!' a:from_bufnr
     endif
   finally
     let s:_fp_hijacking = 0
