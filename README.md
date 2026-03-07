@@ -36,7 +36,7 @@ call plug#end()
 
 # Picker selection
 
-- Auto-detect order: `yazi` (though invalid in `GVim`), `lf`, `ranger`, `nnn`.
+- Auto-detect order: `yazi`, `lf`, `ranger`, `nnn`.
 - Prefer a specific picker by `let g:filepicker_prefer = 'lf'` or 'ranger', 'yazi', 'nnn', or an absolute path like '/usr/bin/ranger'
 - If none is available, falls back to `netrw`.
 
@@ -49,6 +49,7 @@ call plug#end()
     - Closes the temporary directory buffer after launching the picker.
     - Has effect only when an external picker is available; otherwise `:FilePicker` falls back to `netrw`.
     - Disable by setting `let g:filepicker_hijack_netrw = 0`.
+    - Yazi currently breaks inside Linux Gvim and falls back to any other available file picker; let `filepicker_allow_yazi_in_gui = 1` to force it anyway
 
 - How to open the first selected file (default: `'drop'`):
     - `let g:filepicker_open = 'drop'` or one of: 'drop', 'edit', 'split', 'vsplit', 'tab', 'tabedit'

@@ -6,7 +6,7 @@ let s:_supported_pickers = ['yazi', 'lf', 'ranger', 'nnn']
 function! s:_picker_allowed(name) abort
   if index(s:_supported_pickers, a:name) < 0 | return 0 | endif
 
-  if a:name ==# 'yazi' && has('gui_running') && !has('nvim')
+  if a:name ==# 'yazi' && has('gui_running') && has('unix') && !has('nvim')
         \ && !get(g:, 'filepicker_allow_yazi_in_gui', 0)
     return 0
   endif
