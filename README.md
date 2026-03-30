@@ -49,7 +49,7 @@ call plug#end()
     - Closes the temporary directory buffer after launching the picker.
     - Has effect only when an external picker is available; otherwise `:FilePicker` falls back to `netrw`.
     - Disable by setting `let g:filepicker_hijack_netrw = 0`.
-    - Yazi currently breaks inside Linux Gvim and falls back to any other available file picker; let `filepicker_allow_yazi_in_gui = 1` to force it anyway
+    - Yazi needs `set guioptions+=!` in Gvim to work (see [vim/vim#19835](https://github.com/vim/vim/issues/19835)); without it, Yazi's DA1 terminal query times out and filepicker falls back to any other available picker. Set `let g:filepicker_allow_yazi_in_gui = 1` to force Yazi anyway.
 
 - How to open the first selected file (default: `'drop'`):
     - `let g:filepicker_open = 'drop'` or one of: 'drop', 'edit', 'split', 'vsplit', 'tab', 'tabedit'

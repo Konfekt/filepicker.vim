@@ -164,6 +164,10 @@ TROUBLESHOOTING                                          *FilePicker-troubleshoo
   `g:no_filepicker_maps` or `g:no_plugin_maps` is not set.
 - If passing extra args, ensure |g:filepicker_args| is a Dict and values are a
   List or String.
+- Yazi in Gvim: requires `set guioptions+=!` so the terminal properly handles
+  Yazi's DA1 query (see https://github.com/vim/vim/issues/19835). Without it,
+  Yazi times out and filepicker falls back to the next available picker. To
+  force Yazi regardless, set `let g:filepicker_allow_yazi_in_gui = 1`.
 
 ==============================================================================
 CHANGELOG                                                  *FilePicker-changelog*
