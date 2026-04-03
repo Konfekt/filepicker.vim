@@ -6,9 +6,9 @@ let s:_supported_pickers = ['yazi', 'lf', 'ranger', 'nnn']
 function! s:_picker_allowed(name) abort
   if index(s:_supported_pickers, a:name) < 0 | return 0 | endif
 
-  " Yazi's DA1 query times out in gvim unless 'guioptions' includes '!'
+  " Yazi's DA1 query times out in Unix Gvim unless 'guioptions' includes '!'
   " which provides a proper terminal for :! commands (see vim/vim#19835)
-  if a:name ==# 'yazi' && has('gui_running') && !has('nvim')
+  if a:name ==# 'yazi' && has('gui_running') && has('unix') && !has('nvim')
         \ && &guioptions !~# '!'
         \ && !get(g:, 'filepicker_allow_yazi_in_gui', 0)
     return 0
