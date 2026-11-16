@@ -4,8 +4,9 @@
 cd "$(dirname "$0")/.." || exit 1
 PATH="$PWD/test/bin:$PATH"
 export PATH
+[ $# -gt 0 ] || set -- vim nvim
 status=0
-for editor in ${@:-vim nvim}; do
+for editor in "$@"; do
   command -v "$editor" >/dev/null 2>&1 || { echo "skip: $editor not found"; continue; }
   out=$(mktemp)
   printf 'not run\n' > "$out"
