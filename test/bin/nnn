@@ -1,0 +1,22 @@
+#!/bin/sh
+# Fake nnn for the test suite: writes the selection from $FAKE_PICK_FILE
+# (NUL-separated if $FAKE_NUL is set) and, like nnn, the last directory as
+# the shell command `cd '<path>'` to $NNN_TMPFILE.
+sel=
+while [ $# -gt 0 ]; do
+  case $1 in
+    -p) sel=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+if [ -n "$FAKE_PICK_FILE" ] && [ -n "$sel" ]; then
+  if [ -n "$FAKE_NUL" ]; then
+    tr '\n' '\000' < "$FAKE_PICK_FILE" > "$sel"
+  else
+    cat "$FAKE_PICK_FILE" > "$sel"
+  fi
+fi
+if [ -n "$FAKE_CD" ] && [ -n "$NNN_TMPFILE" ]; then
+  printf "cd '%s'" "$(printf '%s' "$FAKE_CD" | sed "s/'/'\\\\''/g")" > "$NNN_TMPFILE"
+fi
+exit 0

@@ -64,6 +64,7 @@ call plug#end()
 # Last directory
 
 `filepicker.vim` can remember the last directory visited in the picker, even when no files are selected, and then change Vim's working directory to that location.
+A tab- or window-local directory (`:tcd`, `:lcd`) stays local; only its value changes.
 
 - **yazi**
     - `filepicker.vim` passes `--cwd-file <tempfile>` to yazi, which writes its last directory there on quit.
@@ -82,12 +83,12 @@ call plug#end()
     - On quit, ranger writes the final directory into that file.
 - **nnn**
     - `filepicker.vim` exports `NNN_TMPFILE=<tempfile>`.
-    - nnn writes its last directory to this file on exit.
+    - nnn writes its last directory to this file on exit, as the shell command `cd '<path>'`, which `filepicker.vim` reads back.
 
 
 # Tests
 
-`test/run.sh` runs smoke tests in Vim (with `+terminal`) and Neovim against a fake picker in `test/bin`.
+`test/run.sh` runs smoke tests in Vim (with `+terminal`) and Neovim against fake pickers in `test/bin`.
 
 # Example Configuration
 

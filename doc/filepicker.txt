@@ -20,8 +20,9 @@ COMMANDS                                                      *FilePicker-comman
 
                                                         *:FilePicker*
 `:FilePicker [path]`:
-    -complete=dir
-    - Start the picker in [path].
+    - Completes file and directory names.
+    - Start the picker in [path]; if [path] is a file, start in its
+      directory with the file selected.
     - If omitted, start in the current buffer's directory (or CWD if none).
     - Open the first selected file and add remaining selections to the arglist.
 
@@ -107,7 +108,8 @@ BEHAVIOR                                                      *FilePicker-behavi
 
 - Editor integration:
   - Neovim:
-    - Use |termopen()| in a temporary terminal buffer.
+    - Use |jobstart()| with `term` (|termopen()| before Neovim 0.11) in a
+      temporary terminal buffer.
     - Wipe the terminal buffer on exit.
     - Then open selected files and restore.
   - Vim with +terminal:
@@ -127,8 +129,13 @@ BEHAVIOR                                                      *FilePicker-behavi
   - NNN:    `nnn -p <tempfile>` (last directory via `$NNN_TMPFILE`)
 
 - No selection:
-  - Return to the previous buffer and |:cd| to the picker's last directory,
-    if it reported one. See the README for the LF configuration this needs.
+  - Return to the previous buffer and change to the picker's last directory,
+    if it reported one, keeping the scope of the current directory (global,
+    tab-local or window-local; see |chdir()|). See the README for the LF
+    configuration this needs. NNN reports it on every quit.
+
+- One picker at a time:
+  - While a picker runs, a further |:FilePicker| is refused with a message.
 
 - Multiple selections:
   - Open the first selection according to |g:filepicker_open|.
