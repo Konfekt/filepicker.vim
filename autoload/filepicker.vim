@@ -1,6 +1,6 @@
 let s:_picker_cmd  = ''
 let s:_picker_name = ''
-let s:_picker_detected = 0
+let s:_picker_key = []
 let s:_supported_pickers = ['yazi', 'lf', 'ranger', 'nnn']
 
 function! s:_picker_allowed(name) abort
@@ -18,12 +18,18 @@ function! s:_picker_allowed(name) abort
 endfunction
 
 function! s:detect_picker() abort
-  if s:_picker_detected
+  " Detect again whenever an input changed, e.g. 'guioptions' set in a gvimrc
+  " (sourced after plugins) or g:filepicker_prefer changed at runtime.
+  let prefer = get(g:, 'filepicker_prefer', '')
+  let key = [prefer, has('gui_running'), &guioptions =~# '!',
+        \ get(g:, 'filepicker_allow_yazi_in_gui', 0)]
+  if key ==# s:_picker_key
     return
   endif
-  let s:_picker_detected = 1
+  let s:_picker_key = key
+  let s:_picker_cmd  = ''
+  let s:_picker_name = ''
 
-  let prefer = get(g:, 'filepicker_prefer', '')
   if type(prefer) == v:t_string && !empty(prefer) && executable(prefer)
     let name = fnamemodify(prefer, ':t:r')
     if s:_picker_allowed(name)
@@ -40,9 +46,6 @@ function! s:detect_picker() abort
       return
     endif
   endfor
-
-  let s:_picker_cmd  = ''
-  let s:_picker_name = ''
 endfunction
 
 function! filepicker#PickerAvailable() abort
@@ -50,25 +53,19 @@ function! filepicker#PickerAvailable() abort
   return !empty(s:_picker_cmd)
 endfunction
 
+" Fallback without an external picker: open the directory with netrw and put
+" the cursor on the current file.
 function! s:Opendir(dir) abort
-  let path = a:dir
-  if empty(path)
-    let path = expand('%')
-    if path =~# '^$\|^term:[\/][\/]'
-      execute 'edit' '.'
-    else
-      let save_dir = getcwd()
-      try
-        call chdir(expand('%:p:h'))
-        execute 'edit' expand('%:h')
-        let pattern = '^\%(| \)*'.escape(expand('#:t'), '.*[]~\').'[/*|@=]\=\%($\|\s\)'
-        call search(pattern, 'wc')
-      finally
-        call chdir(save_dir)
-      endtry
-    endif
+  if !empty(a:dir)
+    execute 'edit' fnameescape(a:dir)
+  elseif expand('%') =~# '^$\|^term:[\/][\/]'
+    edit .
   else
-    execute 'edit' fnameescape(path)
+    let name = expand('%:t')
+    execute 'edit' fnameescape(expand('%:p:h'))
+    if !empty(name)
+      call search('^\%(| \)*\V' . escape(name, '\') . '\m[/*|@=]\=\%($\|\s\)', 'wc')
+    endif
   endif
 endfunction
 
@@ -93,14 +90,13 @@ function! filepicker#FilePicker(...) abort
     return
   endif
 
-  " Use a fresh temp file for each run to avoid stale selections.
-  let s:selection_file = tempname()
-  let s:cwd_file = tempname()
-
   " Resolve input path, defaulting to the current buffer's path or CWD.
   let user_path = ''
   if type(user_arg) == v:t_string && !empty(user_arg)
-    let user_path = fnamemodify(expand(user_arg), ':p')
+    " Expand ~, $VAR, etc. only if the argument is not an existing path as is.
+    let user_path = isdirectory(user_arg) || filereadable(user_arg)
+          \ ? user_arg : expand(user_arg)
+    let user_path = fnamemodify(user_path, ':p')
   endif
 
   let start_dir = ''
@@ -108,9 +104,9 @@ function! filepicker#FilePicker(...) abort
 
   if !empty(user_path)
     if isdirectory(user_path)
-      let start_dir = fnamemodify(user_path, ':p')
+      let start_dir = user_path
     elseif filereadable(user_path)
-      let select_file = fnamemodify(user_path, ':p')
+      let select_file = user_path
       let start_dir = fnamemodify(select_file, ':h')
     endif
   endif
@@ -127,13 +123,11 @@ function! filepicker#FilePicker(...) abort
     endif
   endif
 
+  " Use fresh temp files for each run to avoid stale selections.
+  let s:selection_file = tempname()
+  let s:cwd_file = tempname()
+
   let cmd = s:build_cmd(s:_picker_name, start_dir, select_file)
-  if empty(cmd)
-    echohl WarningMsg | echom '[filepicker] No compatible picker found.' | echohl None
-    call delete(s:selection_file)
-    call delete(s:cwd_file)
-    return
-  endif
 
   " Ensure tools that consult $PWD (instead of getcwd()) still start correctly.
   let env = {'PWD': s:_normalize_pwd(start_dir)}
@@ -143,12 +137,16 @@ function! filepicker#FilePicker(...) abort
     let env['NNN_TMPFILE'] = s:cwd_file
   endif
 
-  let s:names = []
   call s:save()
   try
     call s:term(cmd, start_dir, env)
   catch
+    call s:back_to_prev()
+    call s:cleanup()
     call s:restore()
+    echohl ErrorMsg
+    echomsg '[filepicker] Failed to start ' . s:_picker_cmd . ': ' . v:exception
+    echohl None
   endtry
 endfunction
 
@@ -168,14 +166,7 @@ endfunction
 
 " Build the external picker command list for termopen/term_start or shell fallback.
 function! s:build_cmd(picker_name, start_dir, select_file) abort
-  if !s:_picker_allowed(a:picker_name)
-    return []
-  endif
-  let cmd = []
-  let extra = s:_extra_args(a:picker_name)
-
   if a:picker_name ==# 'yazi'
-    " Use space-separated args for compatibility.
     let cmd = [s:_picker_cmd, '--chooser-file', s:selection_file, '--cwd-file', s:cwd_file]
   elseif a:picker_name ==# 'lf'
     let cmd = [s:_picker_cmd, '-selection-path', s:selection_file]
@@ -185,104 +176,93 @@ function! s:build_cmd(picker_name, start_dir, select_file) abort
     let cmd = [s:_picker_cmd, '-p', s:selection_file]
   endif
 
-  if empty(cmd)
-    return []
-  endif
-
   " Add user extra args after built-in flags but before positional path.
-  if !empty(extra)
-    let cmd += extra
-  endif
+  let cmd += s:_extra_args(a:picker_name)
 
   " Prefer selecting a file when provided; otherwise pass the start directory explicitly.
-  if !empty(a:select_file) && filereadable(a:select_file)
-    call add(cmd, a:select_file)
-  elseif !empty(a:start_dir)
-    call add(cmd, a:start_dir)
-  endif
-
+  call add(cmd, empty(a:select_file) ? a:start_dir : a:select_file)
   return cmd
 endfunction
 
-" Create a scratch buffer in any window showing {buf} so wiping it doesn't close
-" the window/tabpage.
+" Replace {buf} by a scratch buffer in every window showing it, so that wiping
+" it doesn't close the window/tabpage.
 function! s:_keep_windows_open(buf) abort
-  if !bufexists(a:buf)
-    return
-  endif
-
-  let wins = exists('*win_findbuf') ? win_findbuf(a:buf) : []
-  if empty(wins)
-    if bufnr('%') == a:buf
-      call s:_open_scratch_in_current_win()
-    endif
-    return
-  endif
-
-  for id in wins
-    if win_gotoid(id) && bufnr('%') == a:buf
-      call s:_open_scratch_in_current_win()
+  for id in win_findbuf(a:buf)
+    if win_gotoid(id)
+      keepalt enew
+      setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile
     endif
   endfor
 endfunction
 
-function! s:_open_scratch_in_current_win() abort
-  keepalt enew
-  setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile
-endfunction
-
-" Script-local state: external picker presence and restoration context.
 let s:_fp_prev_bufnr = -1
 
 " Save context and prevent 'wipe' for the previous buffer while the picker runs.
 function! s:save() abort
   let s:_fp_prev_bufnr      = bufnr('%')
-  let s:_fp_prev_bufhidden  = s:_fp_prev_bufnr > 0 ? getbufvar(s:_fp_prev_bufnr, '&bufhidden') : ''
+  let s:_fp_prev_bufhidden  = getbufvar(s:_fp_prev_bufnr, '&bufhidden')
   let s:_fp_prev_hidden_opt = &hidden
 
-  if !&hidden
-    set hidden
-  endif
+  set hidden
 
-  if s:_fp_prev_bufnr > 0
-        \ && bufexists(s:_fp_prev_bufnr)
-        \ && getbufvar(s:_fp_prev_bufnr, '&buftype') ==# ''
+  if getbufvar(s:_fp_prev_bufnr, '&buftype') ==# ''
         \ && s:_fp_prev_bufhidden ==# 'wipe'
     call setbufvar(s:_fp_prev_bufnr, '&bufhidden', 'hide')
   endif
 endfunction
 
-let s:names = []
-" Restore the previous window/buffer and original options.
-function! s:restore() abort
-  let prev_buf = get(s:, '_fp_prev_bufnr', -1)
-
-  if prev_buf > 0 && bufexists(prev_buf) && bufnr('%') != prev_buf && empty(s:names)
-    execute 'buffer' prev_buf
+" Show the previous buffer again in the current window, if it still exists.
+function! s:back_to_prev() abort
+  let prev_buf = s:_fp_prev_bufnr
+  if prev_buf > 0 && bufexists(prev_buf) && bufnr('%') != prev_buf
+    execute 'keepalt buffer' prev_buf
   endif
+endfunction
 
+" Restore the original options.
+function! s:restore() abort
+  let prev_buf = s:_fp_prev_bufnr
   if exists('s:_fp_prev_bufhidden') && prev_buf > 0 && bufexists(prev_buf)
     call setbufvar(prev_buf, '&bufhidden', s:_fp_prev_bufhidden)
   endif
-
   if exists('s:_fp_prev_hidden_opt') && !s:_fp_prev_hidden_opt
     set nohidden
   endif
 endfunction
 
-function! s:_suppress_bufenter_start() abort
-  let s:_saved_eventignore = &eventignore
-  if &eventignore =~# '\<BufEnter\>'
-    return
-  endif
-  let &eventignore = empty(&eventignore) ? 'BufEnter' : (&eventignore . ',BufEnter')
+" Delete this run's temp files.
+function! s:cleanup() abort
+  for f in [get(s:, 'selection_file', ''), get(s:, 'cwd_file', '')]
+    if !empty(f)
+      call delete(f)
+    endif
+  endfor
 endfunction
 
-function! s:_suppress_bufenter_end() abort
-  if exists('s:_saved_eventignore')
-    let &eventignore = s:_saved_eventignore
-    unlet s:_saved_eventignore
-  endif
+" After the picker exited: wipe its terminal buffer {term_buf} (if any), show
+" the previous buffer again, open the selection and restore options.
+function! s:finish(term_buf) abort
+  try
+    if a:term_buf > 0 && bufexists(a:term_buf)
+      let save_ei = &eventignore
+      set eventignore+=BufEnter
+      try
+        call s:_keep_windows_open(a:term_buf)
+        " The buffer may already be gone if it had 'bufhidden' set to wipe.
+        if bufexists(a:term_buf)
+          execute 'bwipeout!' a:term_buf
+        endif
+      finally
+        let &eventignore = save_ei
+      endtry
+    endif
+    call s:back_to_prev()
+    call s:open()
+  finally
+    call s:cleanup()
+    call s:restore()
+    redraw!
+  endtry
 endfunction
 
 if has('nvim')
@@ -291,265 +271,104 @@ if has('nvim')
     enew
     let term_buf = bufnr('%')
     setlocal nobuflisted bufhidden=wipe
-    let opts = {'on_exit': function('s:_nvim_term_on_exit', [term_buf])}
-    if !empty(a:cwd)
-      let opts.cwd = a:cwd
-    endif
-    if type(a:env) == v:t_dict && !empty(a:env)
-      let opts.env = a:env
-    endif
+    let opts = {'on_exit': function('s:_nvim_term_on_exit', [term_buf]),
+          \ 'cwd': a:cwd, 'env': a:env}
     call termopen(a:cmd, opts)
     startinsert
   endfunction
 
   function! s:_nvim_term_on_exit(term_buf, job_id, code, event) abort
     " Slight defer to flush terminal I/O.
-    call timer_start(1, function('s:_open_and_wipe', [a:term_buf]))
+    call timer_start(1, {-> s:finish(a:term_buf)})
+  endfunction
+elseif has('terminal')
+  function! s:term(cmd, cwd, env) abort
+    let opts = {'curwin': 1, 'exit_cb': function('s:_vim_term_on_exit'),
+          \ 'cwd': a:cwd, 'env': a:env}
+    try
+      call term_start(a:cmd, opts)
+    catch /^Vim\%((\a\+)\)\=:E475/
+      " Older Vim without the 'env' option: pass the variables via env(1).
+      if !executable('env')
+        throw v:exception
+      endif
+      unlet opts.env
+      call term_start(['env'] + map(sort(keys(a:env)), 'v:val . "=" . a:env[v:val]')
+            \ + a:cmd, opts)
+    endtry
+    setlocal nobuflisted
+    startinsert
   endfunction
 
-  function! s:_open_and_wipe(term_buf, ...) abort
-    call s:_suppress_bufenter_start()
-    try
-      call s:_keep_windows_open(a:term_buf)
-      if bufexists(a:term_buf)
-        execute 'bwipeout!' a:term_buf
+  function! s:_vim_term_on_exit(job, status) abort
+    let term_buf = -1
+    for b in term_list()
+      if term_getjob(b) is a:job
+        let term_buf = b
+        break
       endif
-    finally
-      call s:_suppress_bufenter_end()
-    endtry
-    call s:open()
-    call s:restore()
+    endfor
+    call s:finish(term_buf)
   endfunction
 else
-  if has('terminal')
-    function! s:_with_env_cmd(cmd, env) abort
-      " Validate inputs.
-      if type(a:cmd) != v:t_list || empty(a:cmd)
-        return a:cmd
+  " Last resort: synchronous shell.
+  function! s:term(cmd, cwd, env) abort
+    " Escape for :! so that %, # and ! in paths are not expanded by Vim.
+    let cmdline = join(map(copy(a:cmd), 'shellescape(v:val, 1)'))
+    if executable('env')
+      let cmdline = 'env ' . join(map(sort(keys(a:env)),
+            \ 'shellescape(v:val . "=" . a:env[v:val], 1)')) . ' ' . cmdline
+    endif
+
+    " chdir() keeps the scope (global, tab or window) of the current directory.
+    let save_dir = chdir(a:cwd)
+    try
+      execute 'silent !' . cmdline
+    finally
+      if !empty(save_dir)
+        call chdir(save_dir)
       endif
-      if type(a:env) != v:t_dict || empty(a:env)
-        return a:cmd
-      endif
-
-      " Prefer POSIX `env` whenever available (including MSYS2/Cygwin/Git for Windows).
-      if executable('env')
-        let env_cmd = ['env']
-        for k in sort(keys(a:env))
-          call add(env_cmd, k . '=' . a:env[k])
-        endfor
-        return env_cmd + a:cmd
-      endif
-
-      " Windows fallback: rewrite cmd.exe and PowerShell payloads.
-      if has('win32') || has('win64')
-        let exe = tolower(fnamemodify(a:cmd[0], ':t'))
-
-        if exe ==# 'cmd.exe' || exe ==# 'cmd'
-          return s:_with_env_cmd_cmdexe(a:cmd, a:env)
-        endif
-
-        if exe ==# 'powershell.exe' || exe ==# 'powershell' || exe ==# 'pwsh.exe' || exe ==# 'pwsh'
-          return s:_with_env_cmd_powershell(a:cmd, a:env)
-        endif
-      endif
-
-      return a:cmd
-    endfunction
-
-    function! s:_with_env_cmd_cmdexe(cmd, env) abort
-      " Inject `set "K=V"&` before the existing /C or /K command string.
-      let out = copy(a:cmd)
-      let lc = map(copy(out), 'tolower(v:val)')
-
-      let i = index(lc, '/c')
-      if i < 0
-        let i = index(lc, '/k')
-      endif
-      if i < 0 || i + 1 >= len(out)
-        return a:cmd
-      endif
-
-      let payload = out[i + 1]
-      let prefix = ''
-
-      for k in sort(keys(a:env))
-        let v = substitute(a:env[k], '"', '^"', 'g')
-        let prefix .= 'set "' . k . '=' . v . '"&'
-      endfor
-
-      let out[i + 1] = prefix . payload
-      return out
-    endfunction
-
-    function! s:_with_env_cmd_powershell(cmd, env) abort
-      " Inject `$env:K='V';` before the existing -Command (or -c) script string.
-      let out = copy(a:cmd)
-      let lc = map(copy(out), 'tolower(v:val)')
-
-      let i = index(lc, '-command')
-      if i < 0
-        let i = index(lc, '-c')
-      endif
-      if i < 0 || i + 1 >= len(out)
-        return a:cmd
-      endif
-
-      let script = out[i + 1]
-      let prefix = ''
-
-      for k in sort(keys(a:env))
-        let v = substitute(a:env[k], "'", "''", 'g')
-        let prefix .= '$env:' . k . " = '" . v . "'; "
-      endfor
-
-      let out[i + 1] = prefix . script
-      return out
-    endfunction
-
-    function! s:term(cmd, cwd, env) abort
-      let opts = {'curwin': 1, 'exit_cb': function('s:_vim_term_on_exit')}
-      if !empty(a:cwd)
-        let opts.cwd = a:cwd
-      endif
-      if type(a:env) == v:t_dict && !empty(a:env)
-        let opts.env = a:env
-      endif
-
-      try
-        call term_start(a:cmd, opts)
-      catch /^Vim\%((\a\+)\)\=:E475/
-        if has_key(opts, 'env')
-          unlet opts.env
-          call term_start(s:_with_env_cmd(a:cmd, a:env), opts)
-        else
-          throw v:exception
-        endif
-      endtry
-
-      setlocal nobuflisted
-      startinsert
-    endfunction
-
-    function! s:_vim_term_on_exit(job, status) abort
-      let term_buf = s:term_buf_for_job(a:job)
-      call s:_suppress_bufenter_start()
-      try
-        if term_buf > 0 && bufexists(term_buf)
-          call s:_keep_windows_open(term_buf)
-          execute 'bwipeout!' term_buf
-        endif
-      finally
-        call s:_suppress_bufenter_end()
-      endtry
-      call s:open()
-      call s:restore()
-    endfunction
-
-    function! s:term_buf_for_job(job) abort
-      for b in term_list()
-        if term_getjob(b) is a:job
-          return b
-        endif
-      endfor
-      return -1
-    endfunction
-  else
-    " Last resort: synchronous shell.
-    function! s:term(cmd, cwd, env) abort
-      let parts = map(copy(a:cmd), 'shellescape(v:val)')
-      let env_parts = []
-      if type(a:env) == v:t_dict && !empty(a:env) && executable('env')
-        for [k, v] in items(a:env)
-          call add(env_parts, shellescape(k . '=' . v))
-        endfor
-      endif
-
-      let save_dir = getcwd()
-      try
-        if !empty(a:cwd)
-          call chdir(a:cwd)
-        endif
-        if !empty(env_parts)
-          execute 'silent !env ' . join(env_parts, ' ') . ' ' . join(parts, ' ')
-        else
-          execute 'silent !' . join(parts, ' ')
-        endif
-      finally
-        if !empty(a:cwd)
-          call chdir(save_dir)
-        endif
-      endtry
-
-      call s:open()
-      call s:restore()
-      redraw!
-    endfunction
-  endif
+    endtry
+    call s:finish(-1)
+  endfunction
 endif
 
 function! s:_read_first_line(path) abort
-  if type(a:path) != v:t_string || empty(a:path) || !filereadable(a:path)
+  if !filereadable(a:path)
     return ''
   endif
   let lines = readfile(a:path, '', 1)
   return empty(lines) ? '' : substitute(lines[0], '\r$', '', '')
 endfunction
 
-" Open files selected by the external picker.
-function! s:open(...) abort
-  let s:names = []
+" Open files selected by the external picker, or else cd to its last directory.
+function! s:open() abort
+  let names = filereadable(s:selection_file) ? readfile(s:selection_file) : []
+  call map(names, 'substitute(v:val, "\\r$", "", "")')
+  call filter(names, '!empty(v:val)')
 
-  if exists('s:selection_file') && filereadable(s:selection_file)
-    let s:names = readfile(s:selection_file)
-    call delete(s:selection_file)
-  endif
-
-  if !empty(s:names)
-    call map(s:names, 'substitute(v:val, "\\r$", "", "")')
-    call filter(s:names, '!empty(v:val)')
-
+  if !empty(names)
     let how = get(g:, 'filepicker_open', 'drop')
-
-    if how ==# 'tab'
-      let how = 'tabedit'
-    elseif how ==# 'tabdrop'
-      let how = 'tab drop'
-    endif
-
+    let how = get({'tab': 'tabedit', 'tabdrop': 'tab drop'}, how, how)
     if index(['drop', 'edit', 'split', 'vsplit', 'tabedit', 'tab drop'], how) < 0
       let how = 'drop'
     endif
 
-    execute how fnameescape(s:names[0])
-
-    for name in s:names[1:]
+    execute how fnameescape(names[0])
+    for name in names[1:]
       execute 'argadd' fnameescape(name)
     endfor
-
-    if exists('s:cwd_file') && filereadable(s:cwd_file)
-      call delete(s:cwd_file)
-    endif
-
-    redraw!
     return
   endif
 
   " No selection: try to cd to the picker's last directory on quit.
-  let last_dir = ''
-
-  if exists('s:cwd_file') && filereadable(s:cwd_file)
-    let last_dir = s:_read_first_line(s:cwd_file)
-    call delete(s:cwd_file)
-  endif
-
+  let last_dir = s:_read_first_line(s:cwd_file)
   if !empty(last_dir)
     let last_dir = fnamemodify(last_dir, ':p')
     if isdirectory(last_dir)
       execute 'cd' fnameescape(last_dir)
     endif
   endif
-
-  redraw!
 endfunction
 
 let s:_fp_hijacking = 0
@@ -568,10 +387,12 @@ function! s:IsDirBuf(buf) abort
   return isdirectory(fnamemodify(name, ':p'))
 endfunction
 
+function! s:hijack_ok() abort
+  return get(g:, 'filepicker_hijack_netrw', 1) && !s:_fp_hijacking
+        \ && filepicker#PickerAvailable()
+endfunction
+
 function! s:OpenDirWithPicker(dir, from_bufnr) abort
-  if s:_fp_hijacking
-    return
-  endif
   let s:_fp_hijacking = 1
   try
     let dir = fnamemodify(a:dir, ':p')
@@ -585,33 +406,14 @@ function! s:OpenDirWithPicker(dir, from_bufnr) abort
   endtry
 endfunction
 
+" At startup, the directory buffer is usually hijacked by BufEnter already;
+" this covers the cases where BufEnter did not fire (e.g. lazy loading).
 function! filepicker#OnVimEnter() abort
-  if !get(g:, 'filepicker_hijack_netrw', 1)
-    return
-  endif
-  if !filepicker#PickerAvailable()
-    return
-  endif
-  if argc() == 0
-    return
-  endif
-  for i in range(argc() - 1)
-    let p = argv(i)
-    if isdirectory(p)
-      call s:OpenDirWithPicker(p, bufnr('%'))
-      break
-    endif
-  endfor
+  call filepicker#OnBufEnter()
 endfunction
 
 function! filepicker#OnBufEnter() abort
-  if !get(g:, 'filepicker_hijack_netrw', 1)
-    return
-  endif
-  if !filepicker#PickerAvailable()
-    return
-  endif
-  if s:_fp_hijacking
+  if !s:hijack_ok()
     return
   endif
   let bnr = bufnr('%')
@@ -625,13 +427,7 @@ function! filepicker#OnBufEnter() abort
 endfunction
 
 function! filepicker#OnFileTypeNetrw() abort
-  if !get(g:, 'filepicker_hijack_netrw', 1)
-    return
-  endif
-  if !filepicker#PickerAvailable()
-    return
-  endif
-  if s:_fp_hijacking
+  if !s:hijack_ok()
     return
   endif
   let dir = get(b:, 'netrw_curdir', expand('%:p'))
