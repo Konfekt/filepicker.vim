@@ -1,0 +1,15 @@
+#!/bin/sh
+# Fake lf for the test suite: logs its arguments, then writes the selection
+# from $FAKE_PICK_FILE and the last directory from $FAKE_CD.
+sel=
+last=
+while [ $# -gt 0 ]; do
+  case $1 in
+    -selection-path) sel=$2; shift 2 ;;
+    *) last=$1; shift ;;
+  esac
+done
+[ -n "$FAKE_LOG" ] && printf '%s\n' "$last" >> "$FAKE_LOG"
+[ -n "$FAKE_PICK_FILE" ] && [ -n "$sel" ] && cat "$FAKE_PICK_FILE" > "$sel"
+[ -n "$FAKE_CD" ] && [ -n "$LF_CD_FILE" ] && printf '%s' "$FAKE_CD" > "$LF_CD_FILE"
+exit 0

@@ -4,8 +4,8 @@
 ==============================================================================
 INTRODUCTION                                                    *FilePicker-intro*
 
-FilePicker provides the |:FilePicker| command to launch a terminal file miller
-([LF], [Ranger], [Yazi], or [NNN]) to preview, select, and open files in Vim
+FilePicker provides the |:FilePicker| command to launch a terminal file manager
+([Yazi], [LF], [Ranger], or [NNN]) to preview, select, and open files in Vim
 or Neovim.
 
 If no [path] is given, start in the current buffer's directory, or the current
@@ -29,28 +29,29 @@ COMMANDS                                                      *FilePicker-comman
 MAPPINGS                                                      *FilePicker-mappings*
 
                                                         *<Plug>(FilePicker)*
-- Default normal-mode map: `-` → `<Plug>(FilePicker)`.
+- Default normal-mode map: `-` → `<Plug>(FilePicker)`, unless `-` is already
+  mapped.
 - Remap by mapping `<Plug>(FilePicker)`.
 - Disable default mapping: set one of
   - `let g:no_filepicker_maps = 1`
   - `let g:no_plugin_maps = 1`
-- Optionally add a matching `-` mapping inside the picker (lf/ranger/yazi/nnn),
+- Optionally add a matching `-` mapping inside the picker (yazi/lf/ranger/nnn),
   e.g. `map - updir` or `map - cd ..`.
 
 ==============================================================================
 PICKER SELECTION                                              *FilePicker-picker*
 
-Auto-detect supported pickers in this order: lf, ranger, yazi, nnn.
+Auto-detect supported pickers in this order: yazi, lf, ranger, nnn.
 
                                                         *g:filepicker_prefer*
 Prefer a specific picker or absolute path:
 
 >
-    " 'lf', 'ranger', 'yazi', 'nnn', or an absolute path like '/usr/bin/ranger'
+    " 'yazi', 'lf', 'ranger', 'nnn', or an absolute path like '/usr/bin/ranger'
     let g:filepicker_prefer = 'lf'
 <
 
-The value must be executable.
+The value must be executable and its name one of the supported pickers.
 
 ==============================================================================
 OPTIONS                                                      *FilePicker-options*
@@ -69,20 +70,26 @@ OPTIONS                                                      *FilePicker-options
 
 - g:filepicker_args                                                *g:filepicker_args*
   - Extra arguments per picker.
-  - Dict keyed by picker name ('lf', 'ranger', 'yazi', 'nnn') or '*' for
-    defaults.
-  - Values may be a List or a String.
+  - Dict keyed by picker name ('yazi', 'lf', 'ranger', 'nnn') or '*' for
+    all others.
+  - Values may be a List or a String (split at white space).
+  - Added after the built-in flags and before the start path.
 >
     let g:filepicker_args = {
-          \ 'ranger': ['--choosedir=/tmp/dir'],
-          \ '*': '--chooseflags something'
+          \ 'nnn': '-H',
+          \ 'ranger': ['--cmd=set show_hidden true'],
           \ }
 <
 
+- g:filepicker_allow_yazi_in_gui                  *g:filepicker_allow_yazi_in_gui*
+  - Default: 0.
+  - In Unix Gvim, Yazi is skipped unless 'guioptions' contains `!`; see
+    |FilePicker-troubleshooting|. Set to 1 to use Yazi regardless.
+
 - g:filepicker_open                                              *g:filepicker_open*
   - How to open the first selected file.
-  - One of: 'drop' (default), 'edit', 'split', 'vsplit', 'tab', 'tabedit'.
-  - For 'tab'/'tabedit', a tab-aware drop is used.
+  - One of: 'drop' (default), 'edit', 'split', 'vsplit', 'tab' or 'tabedit'
+    (open in a new tab), 'tabdrop' (|:drop| in a new tab unless already open).
 >
     let g:filepicker_open = 'vsplit'
 <
@@ -91,14 +98,12 @@ OPTIONS                                                      *FilePicker-options
 BEHAVIOR                                                      *FilePicker-behavior*
 
 - Working directory:
-  - Spawn the picker with its current working directory set to the desired
-    start directory.
-  - Avoid rely-on-positional-path semantics across pickers.
+  - Spawn the picker with its working directory (and `$PWD`) set to the start
+    directory.
 
-- File preselection:
-  - If the picker supports starting with a specific file selected, pass it
-    explicitly (e.g. `ranger --selectfile FILE`).
-  - Otherwise rely on the picker's working directory.
+- Start path:
+  - Pass the current (or given) file as last argument so that the picker
+    starts with it selected; otherwise pass the start directory.
 
 - Editor integration:
   - Neovim:
@@ -116,10 +121,14 @@ BEHAVIOR                                                      *FilePicker-behavi
 - Selection transport (the picker writes paths to a temp file which is
   read back into Vim):
 
-  - LF:     `lf -selection-path <tempfile>`
-  - Ranger: `ranger --choosefiles=<tempfile> [--selectfile <file>]`
-  - Yazi:   `yazi --chooser-file=<tempfile>`
-  - NNN:    `nnn -p <tempfile>`
+  - Yazi:   `yazi --chooser-file <tempfile> --cwd-file <tempfile>`
+  - LF:     `lf -selection-path <tempfile>` (last directory via `$LF_CD_FILE`)
+  - Ranger: `ranger --choosefiles=<tempfile> --choosedir=<tempfile>`
+  - NNN:    `nnn -p <tempfile>` (last directory via `$NNN_TMPFILE`)
+
+- No selection:
+  - Return to the previous buffer and |:cd| to the picker's last directory,
+    if it reported one. See the README for the LF configuration this needs.
 
 - Multiple selections:
   - Open the first selection according to |g:filepicker_open|.
@@ -135,10 +144,10 @@ EXAMPLES                                                    *FilePicker-examples
     " Or prefer a full path
     let g:filepicker_prefer = '/usr/bin/ranger'
 
-    " Pass extra flags to a specific picker and defaults to all pickers
+    " Pass extra flags to specific pickers
     let g:filepicker_args = {
-          \ 'ranger': ['--choosedir=/tmp/dir'],
-          \ '*': '--chooseflags something'
+          \ 'nnn': '-H',
+          \ 'ranger': ['--cmd=set show_hidden true'],
           \ }
 
     " Open the first selection in a vertical split
@@ -160,27 +169,14 @@ TROUBLESHOOTING                                          *FilePicker-troubleshoo
 - If :FilePicker launches the fallback explorer, ensure that a supported picker
   is installed and in $PATH, or that |g:filepicker_prefer| points to an
   executable.
-- If the `-` mapping does not work, verify no conflicting mapping and that
-  `g:no_filepicker_maps` or `g:no_plugin_maps` is not set.
+- If the `-` mapping does not work, check `:verbose nmap -` for a conflicting
+  mapping and that `g:no_filepicker_maps` or `g:no_plugin_maps` is not set.
 - If passing extra args, ensure |g:filepicker_args| is a Dict and values are a
   List or String.
 - Yazi in Gvim: requires `set guioptions+=!` so the terminal properly handles
   Yazi's DA1 query (see https://github.com/vim/vim/issues/19835). Without it,
   Yazi times out and filepicker falls back to the next available picker. To
-  force Yazi regardless, set `let g:filepicker_allow_yazi_in_gui = 1`.
-
-==============================================================================
-CHANGELOG                                                  *FilePicker-changelog*
-
-- Add g:filepicker_hijack_netrw to replace netrw directory views with the
-  external picker.
-- Improve startup path detection and file preselection.
-- Add g:filepicker_args for per-picker and default extra arguments.
-- Add g:filepicker_open to control how the first selection is opened ('drop',
-  'edit', 'split', 'vsplit', 'tab', 'tabedit').
-- Enhance picker detection to support absolute paths via g:filepicker_prefer.
-- Spawn picker with cwd set to the start directory to avoid positional-path
-  differences across pickers.
+  force Yazi regardless, set |g:filepicker_allow_yazi_in_gui|.
 
 ==============================================================================
 SEE ALSO                                                      *FilePicker-see-also*
@@ -191,9 +187,10 @@ SEE ALSO                                                      *FilePicker-see-al
 - [Yazi]   https://github.com/sxyazi/yazi
 - [NNN]    https://github.com/jarun/nnn
 - LF `-selection-path`: https://github.com/gokcehan/lf#remote-control
-- Ranger `--choosefiles`, `--selectfile`:
+- Ranger `--choosefiles`, `--choosedir`:
   https://github.com/ranger/ranger/wiki/Integration-with-other-programs#file-chooser
-- Yazi `--chooser-file`: https://yazi-rs.github.io/docs/features/#chooser-mode
+- Yazi `--chooser-file`, `--cwd-file`:
+  https://yazi-rs.github.io/docs/features/#chooser-mode
 - NNN `-p`: https://github.com/jarun/nnn/wiki/Usage#environment-and-options
 
 vim:tw=78:ts=8:ft=help:norl:

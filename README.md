@@ -25,20 +25,21 @@ call plug#end()
 
 # Mapping
 
-- Default normal-mode mapping: `-` → `<Plug>(FilePicker)`.
+- Default normal-mode mapping: `-` → `<Plug>(FilePicker)`, unless `-` is already mapped.
 - Remap by mapping `<Plug>(FilePicker)`.
 - Disable default map by setting one of:
     - `let g:no_filepicker_maps = 1`
     - `let g:no_plugin_maps = 1`
 
-- Optionally add corresponding `-` mappings inside the picker itself (lf, ranger, ...), e.g. `map - updir` or `map - cd ..`.
+- Optionally add corresponding `-` mappings inside the picker itself (yazi, lf, ranger, ...), e.g. `map - updir` or `map - cd ..`.
 
 
 # Picker selection
 
 - Auto-detect order: `yazi`, `lf`, `ranger`, `nnn`.
-- Prefer a specific picker by `let g:filepicker_prefer = 'lf'` or 'ranger', 'yazi', 'nnn', or an absolute path like '/usr/bin/ranger'
+- Prefer a specific picker by `let g:filepicker_prefer = 'lf'` or `'ranger'`, `'yazi'`, `'nnn'`, or an absolute path like `'/usr/bin/ranger'`.
 - If none is available, falls back to `netrw`.
+- Changes to `g:filepicker_prefer` or `guioptions` take effect on the next `:FilePicker`.
 
 # Options
 
@@ -52,20 +53,20 @@ call plug#end()
     - Yazi needs `set guioptions+=!` in Unix Gvim to work (see [vim/vim#19835](https://github.com/vim/vim/issues/19835)); without it, Yazi's DA1 terminal query times out and filepicker falls back to any other available picker. Set `let g:filepicker_allow_yazi_in_gui = 1` to force Yazi anyway.
 
 - How to open the first selected file (default: `'drop'`):
-    - `let g:filepicker_open = 'drop'` or one of: 'drop', 'edit', 'split', 'vsplit', 'tab', 'tabedit'
-    - For `'tab'`/`'tabedit'`, a tab-aware drop is used.
+    - `let g:filepicker_open = 'drop'` or one of: `'edit'`, `'split'`, `'vsplit'`, `'tab'`/`'tabedit'` (new tab), `'tabdrop'` (`:drop` in a new tab unless already open).
+    - The window the picker ran in shows the previous buffer again.
 
 - Extra arguments per picker:
-    - `let g:filepicker_args = { 'ranger': ['--choosedir=/tmp/dir'], '*': '--chooseflags something' }`
-    - Accepts a Dict keyed by picker name or `'*'` for defaults.
-    - Values may be a List or a String.
+    - `let g:filepicker_args = { 'nnn': '-H', 'ranger': ['--cmd=set show_hidden true'] }`
+    - Accepts a Dict keyed by picker name or `'*'` for all others.
+    - Values may be a List or a String (split at white space).
 
 # Last directory
 
 `filepicker.vim` can remember the last directory visited in the picker, even when no files are selected, and then change Vim's working directory to that location.
 
 - **yazi**
-    - `filepicker.vim` reads Yazi's `cwd` from file supplied to (or `--choosedir`).
+    - `filepicker.vim` passes `--cwd-file <tempfile>` to yazi, which writes its last directory there on quit.
 - **lf**
     - `filepicker.vim` exports `LF_CD_FILE=<tempfile>` for the duration of the picker run.
     - lf does not write this file by default; configuration in `lfrc` is required to change into the desired directory by pressing `Q` to exit:
@@ -84,6 +85,10 @@ call plug#end()
     - nnn writes its last directory to this file on exit.
 
 
+# Tests
+
+`test/run.sh` runs smoke tests in Vim (with `+terminal`) and Neovim against a fake picker in `test/bin`.
+
 # Example Configuration
 
 ```vim
@@ -93,10 +98,10 @@ let g:filepicker_prefer = 'lf'
 " Or prefer a full path
 let g:filepicker_prefer = '/usr/bin/ranger'
 
-" Pass extra flags to a specific picker and defaults to all pickers
+" Pass extra flags to specific pickers
 let g:filepicker_args = {
-      \ 'ranger': ['--choosedir=/tmp/dir'],
-      \ '*': '--chooseflags something'
+      \ 'nnn': '-H',
+      \ 'ranger': ['--cmd=set show_hidden true'],
       \ }
 
 " Open the first selection in a vertical split
