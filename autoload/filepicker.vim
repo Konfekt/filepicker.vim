@@ -81,7 +81,17 @@ function! s:_normalize_pwd(dir) abort
   return p
 endfunction
 
+let s:_fp_running = 0
+
 function! filepicker#FilePicker(...) abort
+  " One run at a time: a second picker would overwrite this run's temp files
+  " and saved buffer state.
+  if s:_fp_running
+    echohl WarningMsg
+    echomsg '[filepicker] A picker is already running; finish it first'
+    echohl None
+    return
+  endif
   call s:detect_picker()
 
   let user_arg = a:0 ? a:1 : ''
@@ -138,9 +148,11 @@ function! filepicker#FilePicker(...) abort
   endif
 
   call s:save()
+  let s:_fp_running = 1
   try
     call s:term(cmd, start_dir, env)
   catch
+    let s:_fp_running = 0
     call s:back_to_prev()
     call s:cleanup()
     call s:restore()
@@ -259,6 +271,7 @@ function! s:finish(term_buf) abort
     call s:back_to_prev()
     call s:open()
   finally
+    let s:_fp_running = 0
     call s:cleanup()
     call s:restore()
     redraw!
@@ -273,7 +286,16 @@ if has('nvim')
     setlocal nobuflisted bufhidden=wipe
     let opts = {'on_exit': function('s:_nvim_term_on_exit', [term_buf]),
           \ 'cwd': a:cwd, 'env': a:env}
-    call termopen(a:cmd, opts)
+    " termopen() is deprecated since Neovim 0.11 in favor of jobstart(term).
+    if has('nvim-0.11')
+      let opts.term = v:true
+      let job = jobstart(a:cmd, opts)
+    else
+      let job = termopen(a:cmd, opts)
+    endif
+    if job <= 0
+      throw 'cannot start ' . string(a:cmd)
+    endif
     startinsert
   endfunction
 
@@ -333,18 +355,34 @@ else
   endfunction
 endif
 
-function! s:_read_first_line(path) abort
+" The last directory the picker reported, if any. nnn writes a shell command,
+" `cd '<path>'` with `'\''` for each quote, for its cd-on-quit shell
+" function; the other pickers write the bare path.
+function! s:_read_last_dir(path) abort
   if !filereadable(a:path)
     return ''
   endif
   let lines = readfile(a:path, '', 1)
-  return empty(lines) ? '' : substitute(lines[0], '\r$', '', '')
+  let dir = empty(lines) ? '' : substitute(lines[0], '\r$', '', '')
+  if s:_picker_name ==# 'nnn' && dir =~# '^cd\s'
+    let dir = substitute(dir, '^cd\s\+', '', '')
+    if dir =~# "^'.*'$"
+      let dir = substitute(dir[1 : -2], "'\\\\''", "'", 'g')
+    elseif dir =~# '^".*"$'
+      let dir = dir[1 : -2]
+    endif
+  endif
+  return dir
 endfunction
 
 " Open files selected by the external picker, or else cd to its last directory.
 function! s:open() abort
-  let names = filereadable(s:selection_file) ? readfile(s:selection_file) : []
-  call map(names, 'substitute(v:val, "\\r$", "", "")')
+  let names = []
+  " readfile() turns NUL into NL, so this also splits NUL-separated
+  " selections (such as nnn's with -0).
+  for line in filereadable(s:selection_file) ? readfile(s:selection_file) : []
+    call extend(names, split(line, '\r\=\n\|\r$'))
+  endfor
   call filter(names, '!empty(v:val)')
 
   if !empty(names)
@@ -362,11 +400,17 @@ function! s:open() abort
   endif
 
   " No selection: try to cd to the picker's last directory on quit.
-  let last_dir = s:_read_first_line(s:cwd_file)
+  let last_dir = s:_read_last_dir(s:cwd_file)
   if !empty(last_dir)
     let last_dir = fnamemodify(last_dir, ':p')
     if isdirectory(last_dir)
-      execute 'cd' fnameescape(last_dir)
+      " chdir() keeps the scope (global, tab or window) of the current
+      " directory, where :cd would drop a window- or tab-local one.
+      if exists('*chdir')
+        call chdir(last_dir)
+      else
+        execute 'cd' fnameescape(last_dir)
+      endif
     endif
   endif
 endfunction

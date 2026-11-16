@@ -11,7 +11,7 @@ if !exists('g:no_plugin_maps') && !exists('g:no_filepicker_maps')
   nmap <silent> - <plug>(FilePicker)
 endif
 
-command! -nargs=? -bar -complete=dir FilePicker call filepicker#FilePicker(<q-args>)
+command! -nargs=? -bar -complete=file FilePicker call filepicker#FilePicker(<q-args>)
 
 if get(g:, 'filepicker_hijack_netrw', 1) && filepicker#PickerAvailable()
   if !exists('g:loaded_netrw')

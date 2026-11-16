@@ -1,6 +1,7 @@
 #!/bin/sh
 # Fake lf for the test suite: logs its arguments, then writes the selection
-# from $FAKE_PICK_FILE and the last directory from $FAKE_CD.
+# from $FAKE_PICK_FILE and the last directory from $FAKE_CD, after sleeping
+# $FAKE_SLEEP seconds if set.
 sel=
 last=
 while [ $# -gt 0 ]; do
@@ -9,6 +10,7 @@ while [ $# -gt 0 ]; do
     *) last=$1; shift ;;
   esac
 done
+[ -n "$FAKE_SLEEP" ] && sleep "$FAKE_SLEEP"
 [ -n "$FAKE_LOG" ] && printf '%s\n' "$last" >> "$FAKE_LOG"
 [ -n "$FAKE_PICK_FILE" ] && [ -n "$sel" ] && cat "$FAKE_PICK_FILE" > "$sel"
 [ -n "$FAKE_CD" ] && [ -n "$LF_CD_FILE" ] && printf '%s' "$FAKE_CD" > "$LF_CD_FILE"

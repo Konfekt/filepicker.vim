@@ -103,6 +103,56 @@ call s:check(expand('%:p') ==# s:b, 'cancel: expected b, got ' . expand('%:p'))
 call s:check(getcwd() ==# s:tmp . '/sub', 'cancel: cwd is ' . getcwd())
 execute 'cd' fnameescape(s:cwd)
 
+" A window-local directory stays window-local after cd-on-quit.
+call s:reset()
+let s:cwd = getcwd()
+execute 'lcd' fnameescape(s:tmp)
+call s:pick([], s:tmp . '/sub')
+call s:check(getcwd() ==# s:tmp . '/sub', 'lcd: local cwd is ' . getcwd())
+call s:check(haslocaldir(), 'lcd: window-local directory was dropped')
+call s:check(getcwd(-1) ==# s:cwd, 'lcd: global cwd changed to ' . getcwd(-1))
+execute 'cd' fnameescape(s:cwd)
+
+" nnn: cd-on-quit reads its `cd '<path>'` command; quotes in the path survive.
+let g:filepicker_prefer = s:root . '/test/bin/nnn'
+let s:quoted = s:tmp . "/it's here"
+call mkdir(s:quoted, 'p')
+call s:reset()
+call s:pick([], s:quoted)
+call s:check(getcwd() ==# s:quoted, 'nnn cd: cwd is ' . getcwd())
+execute 'cd' fnameescape(s:cwd)
+
+" nnn -0: NUL-separated selections are split.
+call s:reset()
+let $FAKE_NUL = 1
+call s:pick([s:a, s:c])
+let $FAKE_NUL = ''
+call s:check(expand('%:p') ==# s:a, 'nnn nul: expected a, got ' . expand('%:p'))
+call s:check(index(map(argv(), 'fnamemodify(v:val, ":p")'), s:c) >= 0,
+      \ 'nnn nul: c not in arglist ' . string(argv()))
+unlet g:filepicker_prefer
+
+" A second :FilePicker while one runs is refused instead of clobbering it.
+if has('nvim') || has('terminal')
+  call s:reset()
+  call writefile([s:a], $FAKE_PICK_FILE)
+  let $FAKE_SLEEP = '0.5'
+  FilePicker
+  wincmd p
+  let s:before = len(s:terminals())
+  silent! FilePicker
+  call s:check(len(s:terminals()) == s:before,
+        \ 'concurrent: started a second picker')
+  let $FAKE_SLEEP = ''
+  let s:n = 0
+  while s:n < 250 && !empty(s:terminals())
+    sleep 20m
+    let s:n += 1
+  endwhile
+  sleep 100m
+  call s:check(expand('%:p') ==# s:a, 'concurrent: expected a, got ' . expand('%:p'))
+endif
+
 " No stray scratch or terminal buffers stay listed.
 call s:check(empty(filter(s:listed_names(), 'v:val !~# "\\.txt$"')),
       \ 'stray listed buffers: ' . string(s:listed_names()))
